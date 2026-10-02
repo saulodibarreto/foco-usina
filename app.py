@@ -544,8 +544,7 @@ elif menu == "Caderneta / Presença":
     if projeto_atual == "Projeto de Teatro Sartre":
         aba_chamada, aba_resumo = st.tabs(["📝 Fazer Chamada (Por Dia)", "📊 Resumo Geral do Projeto"])
         datas_db = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO DE PALCO', '17/10', 'APRESENT.']
-        datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO
-PALCO', '17/10', 'APRESENT.']
+        datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO DE PALCO', '17/10', 'APRESENT.']
             
         with aba_chamada:
             colA, colB, colC = st.columns(3)
@@ -771,87 +770,65 @@ PALCO', '17/10', 'APRESENT.']
             if not prof_da_turma_db.empty and prof_da_turma_db.iloc[0]['professor']:
                 st.markdown(f"👨‍🏫 **Professor Responsável:** {prof_da_turma_db.iloc[0]['professor']}")
                 
-            dias_map = {'SEG': 0, 'TER': 1, 'QUA': 2, 'QUI': 3, 'SEX': 4, 'SAB': 5, 'DOM': 6}
-            datas_ui, datas_db = [], []
-            m_num = meses_map[mes_sel]
-            num_dias = calendar.monthrange(ano_sel, m_num)[1]
-            for dia in range(1, num_dias + 1):
-                d_atual = date(ano_sel, m_num, dia)
-                for sigla, num_ds in dias_map.items():
-                    if sigla in turma_chamada.upper() and d_atual.weekday() == num_ds:
-                        datas_ui.append(f"{dia:02d}/{m_num:02d} {sigla}")
-                        datas_db.append(d_atual.strftime("%Y-%m-%d"))
-
-            if not datas_ui:
-                st.warning("Não há aulas programadas para os dias desta turma neste mês específico.")
+            df_alunos_turma = ler_sql('''
+                SELECT a.id as aluno_id, a.nome_aluno as "Aluno" 
+                FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
+                WHERE m.escola=%s AND m.turma=%s AND m.ano_letivo=%s AND m.projeto=%s
+                ORDER BY a.nome_aluno
+            ''', params=(esc_chamada, turma_chamada, ano_sel, projeto_atual))
+            
+            if df_alunos_turma.empty: st.error(f"Não há alunos ativos nesta turma.")
             else:
-                data_hoje_ui = st.selectbox("📅 Selecione a Data da Aula para fazer a chamada:", ["Selecione..."] + datas_ui)
+                dias_map = {'SEG': 0, 'TER': 1, 'QUA': 2, 'QUI': 3, 'SEX': 4, 'SAB': 5, 'DOM': 6}
+                datas_ui, datas_db = [], []
+                m_num = meses_map[mes_sel]
+                num_dias = calendar.monthrange(ano_sel, m_num)[1]
+                for dia in range(1, num_dias + 1):
+                    d_atual = date(ano_sel, m_num, dia)
+                    for sigla, num_ds in dias_map.items():
+                        if sigla in turma_chamada.upper() and d_atual.weekday() == num_ds:
+                            datas_ui.append(f"{dia:02d}/{m_num:02d} {sigla}")
+                            datas_db.append(d_atual.strftime("%Y-%m-%d"))
+
+                df_alunos_turma = df_alunos_turma.set_index('Aluno')
                 
-                if data_hoje_ui != "Selecione...":
-                    idx_data = datas_ui.index(data_hoje_ui)
-                    data_db_selecionada = datas_db[idx_data]
-
-                    df_alunos_turma = ler_sql('''
-                        SELECT a.id as aluno_id, a.nome_aluno as "Aluno" 
-                        FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
-                        WHERE m.escola=%s AND m.turma=%s AND m.ano_letivo=%s AND m.projeto=%s
-                        ORDER BY a.nome_aluno
-                    ''', params=(esc_chamada, turma_chamada, ano_sel, projeto_atual))
+                aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
+                if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
+                else: aluno_ids_tuple = str(aluno_ids_tuple)
+                df_freq = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
+                freq_dict = {(row['aluno_id'], row['data_aula']): row['presente'] for _, row in df_freq.iterrows()}
+                
+                col_cfg = {"aluno_id": None}
+                for i, col_ui in enumerate(datas_ui):
+                    col_db = datas_db[i]
+                    presencas = []
+                    for a_id in df_alunos_turma['aluno_id']:
+                        ip = freq_dict.get((a_id, col_db), -1)
+                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                    df_alunos_turma[col_ui] = presencas
+                    col_cfg[col_ui] = st.column_config.SelectboxColumn(col_ui, options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=85)
+                
+                df_alunos_turma_copy = df_alunos_turma.copy()
+                
+                st.info("💡 Preencha a chamada para toda a turma e clique em **Salvar Chamada**.")
+                with st.form("form_caderneta_extra"):
+                    edited_df = st.data_editor(df_alunos_turma, column_config=col_cfg, use_container_width=True)
+                    btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada", type="primary")
                     
-                    if df_alunos_turma.empty: st.error(f"Não há alunos ativos nesta turma.")
-                    else:
-                        aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
-                        if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
-                        else: aluno_ids_tuple = str(aluno_ids_tuple)
-                        
-                        df_freq_todas = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
-                        
-                        faltas_mes = []
-                        presenca_hoje = []
-                        
-                        for _, row in df_alunos_turma.iterrows():
-                            freqs_aluno = df_freq_todas[df_freq_todas['aluno_id'] == row['aluno_id']]
-                            total_f = freqs_aluno[(freqs_aluno['presente'] == 0) & (freqs_aluno['data_aula'].isin(datas_db))].shape[0]
-                            faltas_mes.append(total_f)
-                            
-                            status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
-                            if not status_hoje.empty:
-                                ip = status_hoje.iloc[0]['presente']
-                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
-                            else:
-                                presenca_hoje.append("⚪ -")
-
-                        df_alunos_turma['Faltas neste Mês'] = faltas_mes
-                        df_alunos_turma['Frequência Nesta Data'] = presenca_hoje
-                        
-                        col_cfg = {
-                            "aluno_id": None,
-                            "Aluno": st.column_config.TextColumn("Aluno", disabled=True),
-                            "Faltas neste Mês": st.column_config.NumberColumn("Faltas neste Mês", disabled=True, width=120),
-                            "Frequência Nesta Data": st.column_config.SelectboxColumn("Frequência Nesta Data", options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=150)
-                        }
-                        
-                        df_display = df_alunos_turma[['aluno_id', 'Aluno', 'Faltas neste Mês', 'Frequência Nesta Data']].set_index('Aluno')
-                        df_display_copy = df_display.copy()
-                        
-                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Edite e clique em **Salvar Chamada**.")
-                        with st.form("form_caderneta_extra"):
-                            edited_df = st.data_editor(df_display, column_config=col_cfg, use_container_width=True)
-                            btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
-                            
-                            if btn_salvar_chamada_extra:
-                                if edited_df.reset_index().to_json() != df_display_copy.reset_index().to_json():
-                                    lote_comandos = []
-                                    for _, row in edited_df.reset_index().iterrows():
-                                        a_id = int(row['aluno_id'])
-                                        val = row['Frequência Nesta Data']
-                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
-                                    executar_lote_sql(lote_comandos)
-                                    st.success("✅ Chamada salva com sucesso!")
-                                    import time
-                                    time.sleep(1)
-                                    st.rerun()
+                    if btn_salvar_chamada_extra:
+                        if edited_df.reset_index().to_json() != df_alunos_turma_copy.to_json():
+                            lote_comandos = []
+                            for _, row in edited_df.iterrows():
+                                a_id = int(row['aluno_id'])
+                                for i, cui in enumerate(datas_ui):
+                                    val = row[cui]
+                                    p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, datas_db[i], p_val)))
+                            executar_lote_sql(lote_comandos)
+                            st.success("✅ Chamada salva com sucesso!")
+                            import time
+                            time.sleep(1)
+                            st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
