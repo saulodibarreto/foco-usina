@@ -174,7 +174,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.rerun()
         with colE2:
             st.subheader("Escolas deste Projeto")
-            df_esc = ler_sql("SELECT id, nome_escola as "Escola" FROM escolas WHERE projeto=%s", params=(projeto_atual,))
+            df_esc = ler_sql('''SELECT id, nome_escola as "Escola" FROM escolas WHERE projeto=%s''', params=(projeto_atual,))
             if not df_esc.empty:
                 df_esc['Excluir'] = False
                 edited_escolas = st.data_editor(df_esc, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
@@ -197,7 +197,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.rerun()
         with colP2:
             st.subheader("Professores deste Projeto")
-            df_prof = ler_sql("SELECT id, nome_professor as "Nome" FROM professores WHERE projeto=%s", params=(projeto_atual,))
+            df_prof = ler_sql('''SELECT id, nome_professor as "Nome" FROM professores WHERE projeto=%s''', params=(projeto_atual,))
             if not df_prof.empty:
                 df_prof['Excluir'] = False
                 edited_profs = st.data_editor(df_prof, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑 Excluir", default=False)}, use_container_width=True)
@@ -222,7 +222,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                         st.rerun()
         with colT2:
             st.subheader("Turmas deste Projeto")
-            df_turmas = ler_sql("SELECT id, escola as "Escola", nome_turma as "Turma", professor as "Professor" FROM turmas WHERE projeto=%s", params=(projeto_atual,))
+            df_turmas = ler_sql('''SELECT id, escola as "Escola", nome_turma as "Turma", professor as "Professor" FROM turmas WHERE projeto=%s''', params=(projeto_atual,))
             if not df_turmas.empty:
                 turmas_lista = ordenar_turmas(df_turmas['Turma'].tolist())
                 df_turmas['Turma'] = pd.Categorical(df_turmas['Turma'], categories=turmas_lista, ordered=True)
@@ -352,7 +352,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.success(f"✅ Usuário {novo_login} criado!"); st.session_state.key_user += 1; st.rerun()
                         except: st.error("⚠️ Este nome de usuário já existe.")
         with colA2:
-            df_users = ler_sql("SELECT id, login as "Usuário", perfil as "Perfil", nome_professor as "Professor" FROM usuarios")
+            df_users = ler_sql('''SELECT id, login as "Usuário", perfil as "Perfil", nome_professor as "Professor" FROM usuarios''')
             if not df_users.empty:
                 df_users['Excluir'] = False
                 edited_users = st.data_editor(df_users, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
