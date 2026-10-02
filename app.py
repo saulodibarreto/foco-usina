@@ -33,13 +33,6 @@ def formatar_telefone(texto):
     elif len(num) == 10: return f"({num[:2]}) {num[2:6]}-{num[6:]}"
     return texto_limpo
 
-def formatar_data(texto):
-    texto_limpo = safe_str(texto)
-    if not texto_limpo: return ""
-    num = re.sub(r'\D', '', texto_limpo)
-    if len(num) == 8: return f"{num[:2]}/{num[2:4]}/{num[4:]}"
-    return texto_limpo
-
 def extrair_serie(nome_turma):
     match = re.search(r'(\d+)º', str(nome_turma))
     return f"{match.group(1)}º Ano" if match else "Outras"
@@ -69,11 +62,16 @@ conn = init_connection()
 def ler_sql(query, params=None):
     return pd.read_sql_query(query, conn, params=params)
 
+@st.cache_data(ttl=120)
+def ler_sql_cached(query, params=None):
+    return pd.read_sql_query(query, conn, params=params)
+
 def executar_sql(query, params=None):
     cur = conn.cursor()
     cur.execute(query, params)
     conn.commit()
     cur.close()
+    st.cache_data.clear()
 
 # --- MOTOR DE ESTADO E LOGIN ---
 if 'logado' not in st.session_state:
@@ -131,9 +129,10 @@ else:
 
 menu = st.sidebar.radio("Navegação", opcoes_menu)
 
-df_escolas_db = ler_sql("SELECT nome_escola FROM escolas WHERE projeto=%s ORDER BY nome_escola", params=(projeto_atual,))
+# Usar a função COM CACHE para que os menus carreguem super rápido
+df_escolas_db = ler_sql_cached("SELECT nome_escola FROM escolas WHERE projeto=%s ORDER BY nome_escola", params=(projeto_atual,))
 lista_escolas_limpa = [safe_str(x) for x in df_escolas_db['nome_escola'].tolist() if safe_str(x) != ""]
-df_prof_db = ler_sql("SELECT nome_professor FROM professores WHERE projeto=%s ORDER BY nome_professor", params=(projeto_atual,))
+df_prof_db = ler_sql_cached("SELECT nome_professor FROM professores WHERE projeto=%s ORDER BY nome_professor", params=(projeto_atual,))
 lista_profs = [safe_str(x) for x in df_prof_db['nome_professor'].tolist() if safe_str(x) != ""]
 
 # --- ECRÃS DO SISTEMA ---
@@ -146,7 +145,6 @@ if menu == "Dashboard":
 elif menu == "Meu Perfil / Senha":
     st.title("👤 Meu Perfil")
     st.write("Altere a sua senha de acesso ao sistema.")
-    
     with st.form("form_senha"):
         nova_senha = st.text_input("Nova Senha", type="password")
         confirma_senha = st.text_input("Confirme a Nova Senha", type="password")
@@ -178,11 +176,14 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
             if not df_esc.empty:
                 df_esc['Excluir'] = False
                 edited_escolas = st.data_editor(df_esc, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
+                conf_esc = st.checkbox("Confirmo as alterações e exclusões de Escolas acima", key="conf_esc")
                 if st.button("💾 Salvar Alterações (Escolas)", type="primary"):
-                    for _, row in edited_escolas.iterrows():
-                        if row.get('Excluir', False): executar_sql("DELETE FROM escolas WHERE id=%s", (row['id'],))
-                        else: executar_sql("UPDATE escolas SET nome_escola=%s WHERE id=%s", (row['Escola'], row['id']))
-                    st.success("✅ Atualizado!"); st.rerun()
+                    if not conf_esc and any(edited_escolas['Excluir']): st.error("Marque a caixa de confirmação antes de excluir.")
+                    else:
+                        for _, row in edited_escolas.iterrows():
+                            if row.get('Excluir', False): executar_sql("DELETE FROM escolas WHERE id=%s", (row['id'],))
+                            else: executar_sql("UPDATE escolas SET nome_escola=%s WHERE id=%s", (row['Escola'], row['id']))
+                        st.success("✅ Atualizado!"); st.rerun()
 
     with aba_profs:
         colP1, colP2 = st.columns(2)
@@ -201,11 +202,14 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
             if not df_prof.empty:
                 df_prof['Excluir'] = False
                 edited_profs = st.data_editor(df_prof, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑 Excluir", default=False)}, use_container_width=True)
+                conf_prof = st.checkbox("Confirmo as alterações e exclusões de Professores", key="conf_prof")
                 if st.button("💾 Salvar Alterações (Profs)", type="primary"):
-                    for _, row in edited_profs.iterrows():
-                        if row.get('Excluir', False): executar_sql("DELETE FROM professores WHERE id=%s", (row['id'],))
-                        else: executar_sql("UPDATE professores SET nome_professor=%s WHERE id=%s", (row['Nome'], row['id']))
-                    st.success("✅ Atualizado!"); st.rerun()
+                    if not conf_prof and any(edited_profs['Excluir']): st.error("Marque a caixa de confirmação antes de excluir.")
+                    else:
+                        for _, row in edited_profs.iterrows():
+                            if row.get('Excluir', False): executar_sql("DELETE FROM professores WHERE id=%s", (row['id'],))
+                            else: executar_sql("UPDATE professores SET nome_professor=%s WHERE id=%s", (row['Nome'], row['id']))
+                        st.success("✅ Atualizado!"); st.rerun()
 
     with aba_turmas:
         colT1, colT2 = st.columns(2)
@@ -233,15 +237,19 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                     "Professor": st.column_config.SelectboxColumn("Professor", options=lista_profs),
                     "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)
                 }, use_container_width=True)
+                
+                conf_turma = st.checkbox("Confirmo as alterações e exclusões de Turmas", key="conf_turma")
                 if st.button("💾 Salvar Alterações (Turmas)", type="primary"):
-                    for _, row in edited_turmas.iterrows():
-                        if row.get('Excluir', False): executar_sql("DELETE FROM turmas WHERE id=%s", (row['id'],))
-                        else:
-                            res = ler_sql("SELECT escola, nome_turma FROM turmas WHERE id=%s", (row['id'],))
-                            if not res.empty and (res.iloc[0]['escola'] != row['Escola'] or res.iloc[0]['nome_turma'] != row['Turma']):
-                                executar_sql("UPDATE matriculas SET escola=%s, turma=%s WHERE escola=%s AND turma=%s AND projeto=%s", (row['Escola'], row['Turma'], res.iloc[0]['escola'], res.iloc[0]['nome_turma'], projeto_atual))
-                            executar_sql("UPDATE turmas SET escola=%s, nome_turma=%s, professor=%s WHERE id=%s", (row['Escola'], row['Turma'], row['Professor'], row['id']))
-                    st.success("✅ Atualizado!"); st.rerun()
+                    if not conf_turma and any(edited_turmas['Excluir']): st.error("Marque a caixa de confirmação antes de excluir.")
+                    else:
+                        for _, row in edited_turmas.iterrows():
+                            if row.get('Excluir', False): executar_sql("DELETE FROM turmas WHERE id=%s", (row['id'],))
+                            else:
+                                res = ler_sql("SELECT escola, nome_turma FROM turmas WHERE id=%s", (row['id'],))
+                                if not res.empty and (res.iloc[0]['escola'] != row['Escola'] or res.iloc[0]['nome_turma'] != row['Turma']):
+                                    executar_sql("UPDATE matriculas SET escola=%s, turma=%s WHERE escola=%s AND turma=%s AND projeto=%s", (row['Escola'], row['Turma'], res.iloc[0]['escola'], res.iloc[0]['nome_turma'], projeto_atual))
+                                executar_sql("UPDATE turmas SET escola=%s, nome_turma=%s, professor=%s WHERE id=%s", (row['Escola'], row['Turma'], row['Professor'], row['id']))
+                        st.success("✅ Atualizado!"); st.rerun()
 
     with aba_importar:
         st.subheader(f"📥 Importação Mágica: {projeto_atual}")
@@ -274,63 +282,68 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                 df_import.columns = [str(c).strip().upper() for c in df_import.columns]
                 
                 if st.button("🚀 Iniciar Importação Mágica", type="primary"):
-                    importados_contador, atualizados_contador = 0, 0
-                    escola = escola_importacao
-                    col_mappings = {'07-25': '25/07', '08-01': '01/08', '09-12': '12/09', '09-18': '18/09', '09-22': '22/09', '09-26': '26/09', 'ENSAIO': 'ENSAIO DE PALCO', '10-17': '17/10', 'APRESENT': 'APRESENT.'}
-                    esp_col = next((c for c in df_import.columns if 'ESPET' in c), None)
-                    cena_col = next((c for c in df_import.columns if 'CENA' in c), None)
-                    qualit_col = next((c for c in df_import.columns if 'QUALIT' in c), None)
-                    
-                    for _, row in df_import.iterrows():
-                        if is_sartre_format:
-                            nome = safe_str(row.get('ALUNO', ''))
-                            if not nome: continue
-                            turma_raw = safe_str(row.get('TURMA', ''))
-                            turma_nome = turma_raw if "º" in turma_raw else f"{serie_prefix}{turma_raw}"
-                            turma_key = turma_nome.replace(" ", "")
-                            prof_nome = prof_map.get(turma_key, "")
-                            if prof_nome:
-                                if ler_sql("SELECT id FROM professores WHERE nome_professor=%s AND projeto=%s", (prof_nome, projeto_atual)).empty:
-                                    executar_sql("INSERT INTO professores (nome_professor, projeto) VALUES (%s, %s)", (prof_nome, projeto_atual))
-                        else:
-                            nome = safe_str(row.get('NOME DO ALUNO', row.get('NOME', '')))
-                            if not nome: continue
-                            turma_nome = safe_str(row.get('TURMA DE TEATRO', row.get('TURMA', '')))
-                            prof_nome = ""
+                    with st.spinner("⏳ Por favor, aguarde. Importando e organizando os dados na nuvem..."):
+                        importados_contador, atualizados_contador = 0, 0
+                        escola = escola_importacao
+                        col_mappings = {'07-25': '25/07', '08-01': '01/08', '09-12': '12/09', '09-18': '18/09', '09-22': '22/09', '09-26': '26/09', 'ENSAIO': 'ENSAIO DE PALCO', '10-17': '17/10', 'APRESENT': 'APRESENT.'}
+                        esp_col = next((c for c in df_import.columns if 'ESPET' in c), None)
+                        cena_col = next((c for c in df_import.columns if 'CENA' in c), None)
+                        qualit_col = next((c for c in df_import.columns if 'QUALIT' in c), None)
+                        
+                        for _, row in df_import.iterrows():
+                            if is_sartre_format:
+                                nome = safe_str(row.get('ALUNO', ''))
+                                if not nome: continue
+                                turma_raw = safe_str(row.get('TURMA', ''))
+                                turma_nome = turma_raw if "º" in turma_raw else f"{serie_prefix}{turma_raw}"
+                                turma_key = turma_nome.replace(" ", "")
+                                prof_nome = prof_map.get(turma_key, "")
+                                if prof_nome:
+                                    if ler_sql("SELECT id FROM professores WHERE nome_professor=%s AND projeto=%s", (prof_nome, projeto_atual)).empty:
+                                        executar_sql("INSERT INTO professores (nome_professor, projeto) VALUES (%s, %s)", (prof_nome, projeto_atual))
+                            else:
+                                nome = safe_str(row.get('NOME DO ALUNO', row.get('NOME', '')))
+                                if not nome: continue
+                                turma_nome = safe_str(row.get('TURMA DE TEATRO', row.get('TURMA', '')))
+                                prof_nome = ""
 
-                        esp_raw = safe_str(row[esp_col]) if esp_col else ""
-                        cena_raw = safe_str(row[cena_col]) if cena_col else ""
-                        q_val = float(row[qualit_col]) if qualit_col and pd.notna(row[qualit_col]) else 0.0
+                            esp_raw = safe_str(row[esp_col]) if esp_col else ""
+                            cena_raw = safe_str(row[cena_col]) if cena_col else ""
+                            q_val = float(row[qualit_col]) if qualit_col and pd.notna(row[qualit_col]) else 0.0
 
-                        if ler_sql("SELECT id FROM turmas WHERE escola=%s AND nome_turma=%s AND projeto=%s", (escola, turma_nome, projeto_atual)).empty and escola and turma_nome:
-                            executar_sql("INSERT INTO turmas (escola, nome_turma, professor, projeto) VALUES (%s, %s, %s, %s)", (escola, turma_nome, prof_nome, projeto_atual))
-                            
-                        aluno_db = ler_sql("SELECT id FROM alunos WHERE nome_aluno=%s", (nome,))
-                        if aluno_db.empty:
-                            cur = conn.cursor()
-                            cur.execute("INSERT INTO alunos (nome_aluno) VALUES (%s) RETURNING id", (nome,))
-                            aluno_id = cur.fetchone()[0]
-                            conn.commit()
-                            cur.close()
-                        else: aluno_id = aluno_db.iloc[0]['id']
-                            
-                        mat_db = ler_sql("SELECT id FROM matriculas WHERE aluno_id=%s AND ano_letivo=2026 AND projeto=%s", (int(aluno_id), projeto_atual))
-                        if mat_db.empty:
-                            executar_sql('''INSERT INTO matriculas (aluno_id, ano_letivo, escola, turma, projeto, espetaculo, cena, nota_qualitativa) 
-                                         VALUES (%s, 2026, %s, %s, %s, %s, %s, %s)''', (int(aluno_id), escola, turma_nome, projeto_atual, esp_raw, cena_raw, q_val))
-                            importados_contador += 1
-                        else:
-                            executar_sql("UPDATE matriculas SET escola=%s, turma=%s, espetaculo=%s, cena=%s, nota_qualitativa=%s WHERE id=%s", (escola, turma_nome, esp_raw, cena_raw, q_val, int(mat_db.iloc[0]['id'])))
-                            atualizados_contador += 1
-                            
-                        for col_name in df_import.columns:
-                            for key, db_date in col_mappings.items():
-                                if key in col_name.upper():
-                                    val = str(row.get(col_name, '')).strip().upper()
-                                    if val in ['P', 'F', 'A']:
-                                        p_val = 1 if val == 'P' else 0
-                                        executar_sql("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (int(aluno_id), db_date, p_val))
-                    st.success(f"🎉 Importação completa! {importados_contador} criados e {atualizados_contador} atualizados (Série: {serie_prefix}).")
+                            if ler_sql("SELECT id FROM turmas WHERE escola=%s AND nome_turma=%s AND projeto=%s", (escola, turma_nome, projeto_atual)).empty and escola and turma_nome:
+                                executar_sql("INSERT INTO turmas (escola, nome_turma, professor, projeto) VALUES (%s, %s, %s, %s)", (escola, turma_nome, prof_nome, projeto_atual))
+                                
+                            aluno_db = ler_sql("SELECT id FROM alunos WHERE nome_aluno=%s", (nome,))
+                            if aluno_db.empty:
+                                cur = conn.cursor()
+                                cur.execute("INSERT INTO alunos (nome_aluno) VALUES (%s) RETURNING id", (nome,))
+                                aluno_id = cur.fetchone()[0]
+                                conn.commit()
+                                cur.close()
+                            else: aluno_id = aluno_db.iloc[0]['id']
+                                
+                            mat_db = ler_sql("SELECT id FROM matriculas WHERE aluno_id=%s AND ano_letivo=2026 AND projeto=%s", (int(aluno_id), projeto_atual))
+                            if mat_db.empty:
+                                executar_sql('''INSERT INTO matriculas (aluno_id, ano_letivo, escola, turma, projeto, espetaculo, cena, nota_qualitativa) 
+                                             VALUES (%s, 2026, %s, %s, %s, %s, %s, %s)''', (int(aluno_id), escola, turma_nome, projeto_atual, esp_raw, cena_raw, q_val))
+                                importados_contador += 1
+                            else:
+                                executar_sql("UPDATE matriculas SET escola=%s, turma=%s, espetaculo=%s, cena=%s, nota_qualitativa=%s WHERE id=%s", (escola, turma_nome, esp_raw, cena_raw, q_val, int(mat_db.iloc[0]['id'])))
+                                atualizados_contador += 1
+                                
+                            for col_name in df_import.columns:
+                                for key, db_date in col_mappings.items():
+                                    if key in col_name.upper():
+                                        val = str(row.get(col_name, '')).strip().upper()
+                                        if val in ['P', 'F', 'A']:
+                                            p_val = 1 if val == 'P' else 0
+                                            executar_sql("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (int(aluno_id), db_date, p_val))
+                    st.balloons()
+                    st.success(f"🎉 SUCESSO! A importação foi concluída: {importados_contador} alunos criados e {atualizados_contador} atualizados (Série: {serie_prefix}). A página recarregará em 5 segundos.")
+                    import time
+                    time.sleep(5)
+                    st.rerun()
             except Exception as e:
                 st.error(f"Erro ao processar arquivo: {e}")
 
@@ -356,11 +369,14 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
             if not df_users.empty:
                 df_users['Excluir'] = False
                 edited_users = st.data_editor(df_users, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
+                conf_user = st.checkbox("Confirmo as alterações e exclusões de Usuários", key="conf_user")
                 if st.button("💾 Salvar Alterações (Logins)", type="primary"):
-                    for _, row in edited_users.iterrows():
-                        if row.get('Excluir', False) and row['Usuário'] != 'admin':
-                            executar_sql("DELETE FROM usuarios WHERE id=%s", (row['id'],))
-                    st.success("✅ Atualizado!"); st.rerun()
+                    if not conf_user and any(edited_users['Excluir']): st.error("Marque a caixa de confirmação antes de excluir.")
+                    else:
+                        for _, row in edited_users.iterrows():
+                            if row.get('Excluir', False) and row['Usuário'] != 'admin':
+                                executar_sql("DELETE FROM usuarios WHERE id=%s", (row['id'],))
+                        st.success("✅ Atualizado!"); st.rerun()
 
 elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'admin':
     st.title(f"➕ Cadastro Manual: {projeto_atual}")
@@ -376,7 +392,7 @@ elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'a
         with col2:
             turmas_cadastradas = []
             if escola_nova != "Selecione...":
-                df_t = ler_sql("SELECT nome_turma FROM turmas WHERE escola=%s AND projeto=%s", params=(escola_nova, projeto_atual))
+                df_t = ler_sql_cached("SELECT nome_turma FROM turmas WHERE escola=%s AND projeto=%s", params=(escola_nova, projeto_atual))
                 turmas_cadastradas = ordenar_turmas(df_t['nome_turma'].tolist())
             turma_nova = st.selectbox("Turma *", ["Selecione..."] + turmas_cadastradas)
         
@@ -402,6 +418,7 @@ elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'a
                              VALUES (%s, 2026, %s, %s, %s, %s)''', (novo_id, escola_nova, turma_nova, serie_nova.strip(), projeto_atual))
                 conn.commit()
                 cur.close()
+                st.cache_data.clear()
                 st.success(f"Aluno **{nome_novo}** cadastrado com sucesso!")
                 st.session_state.key_novo_aluno += 1
                 st.rerun()
@@ -410,7 +427,33 @@ elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'a
 
 elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
     st.title(f"👥 Gestão de Alunos: {projeto_atual}")
-    st.markdown("💡 **Dica:** A edição é salva automaticamente.")
+    st.markdown("💡 **Dica:** A edição individual é salva automaticamente.")
+    
+    with st.expander("🗑️ Apagar Turma Inteira em Lote (Correção de Importação)"):
+        st.warning("⚠️ **Atenção:** Esta ação apagará as matrículas de TODOS os alunos da turma selecionada neste projeto. Use apenas para corrigir planilhas importadas errado.")
+        col_del1, col_del2 = st.columns(2)
+        with col_del1:
+            esc_del = st.selectbox("Selecione a Escola da Turma a apagar:", ["Selecione..."] + lista_escolas_limpa, key="del_esc")
+        with col_del2:
+            opc_t_del = ["Selecione..."]
+            if esc_del != "Selecione...":
+                t_c_del = ler_sql_cached("SELECT nome_turma FROM turmas WHERE escola=%s AND projeto=%s", params=(esc_del, projeto_atual))
+                opc_t_del = ["Selecione..."] + ordenar_turmas(t_c_del['nome_turma'].tolist())
+            turma_del = st.selectbox("Selecione a Turma a apagar:", opc_t_del, key="del_turma")
+            
+        confirmar_del = st.checkbox("Eu tenho certeza absoluta que desejo apagar estes dados permanentemente (NÃO há Ctrl+Z).")
+        if st.button("🚨 Apagar Matrículas desta Turma", type="primary"):
+            if esc_del != "Selecione..." and turma_del != "Selecione..." and confirmar_del:
+                executar_sql("DELETE FROM matriculas WHERE escola=%s AND turma=%s AND projeto=%s", (esc_del, turma_del, projeto_atual))
+                st.success(f"A turma {turma_del} da escola {esc_del} foi apagada com sucesso!")
+                import time
+                time.sleep(2)
+                st.rerun()
+            elif not confirmar_del:
+                st.error("Marque a caixa de confirmação para poder apagar.")
+
+    st.markdown("---")
+
     df_geral_alunos = ler_sql('''
         SELECT 
             m.id as matricula_id, a.id as aluno_id, a.nome_aluno as "Aluno",
@@ -420,7 +463,7 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
         FROM alunos a JOIN matriculas m ON a.id = m.aluno_id WHERE m.projeto = %s
     ''', params=(projeto_atual,))
     
-    if df_geral_alunos.empty: st.warning(f"Nenhum aluno registado.")
+    if df_geral_alunos.empty: st.warning(f"Nenhum aluno registado neste projeto.")
     else:
         df_geral_alunos = df_geral_alunos.fillna({'Série': '', 'Turma': '', 'Escola': '', 'Espetáculo': '', 'Cena': '', 'Ano': 2026})
         df_geral_alunos_copy = df_geral_alunos.copy()
@@ -433,7 +476,7 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
             "Ano": st.column_config.NumberColumn("Ano", format="%d"),
             "Espetáculo": st.column_config.TextColumn("Espetáculo"),
             "Cena": st.column_config.TextColumn("Cena"),
-            "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)
+            "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir (Selecione a caixa de confirmação abaixo para efetivar)", default=False)
         }
         
         if projeto_atual != "Curso Extra":
@@ -442,9 +485,16 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
             cfg_colunas["Espetáculo"] = None; cfg_colunas["Cena"] = None
             
         edited_alunos_df = st.data_editor(df_geral_alunos, hide_index=True, column_config=cfg_colunas, use_container_width=True)
+        conf_indiv = st.checkbox("Confirmo que desejo apagar permanentemente os alunos com a caixa 'Excluir' marcada. (Sem Ctrl+Z)", key="conf_indiv")
+        
         if edited_alunos_df.to_json() != df_geral_alunos_copy.to_json():
             for _, row in edited_alunos_df.iterrows():
-                if row.get('Excluir', False): executar_sql("DELETE FROM matriculas WHERE id=%s", (int(row['matricula_id']),))
+                if row.get('Excluir', False):
+                    if conf_indiv:
+                        executar_sql("DELETE FROM matriculas WHERE id=%s", (int(row['matricula_id']),))
+                        st.success(f"Aluno {row['Aluno']} excluído com sucesso!")
+                    else:
+                        st.error("Para excluir o aluno marcado, marque a caixa de confirmação abaixo da tabela e edite a célula novamente.")
                 else:
                     if projeto_atual == "Curso Extra":
                         executar_sql('''UPDATE alunos SET nome_aluno=%s, cpf_responsavel=%s, responsavel=%s, telefone=%s, responsavel2=%s, telefone2=%s WHERE id=%s''', 
@@ -452,7 +502,7 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
                     else: executar_sql('''UPDATE alunos SET nome_aluno=%s WHERE id=%s''', (row['Aluno'], int(row['aluno_id'])))
                     executar_sql('''UPDATE matriculas SET ano_letivo=%s, escola=%s, turma=%s, serie_aluno=%s, espetaculo=%s, cena=%s WHERE id=%s''', 
                               (int(row['Ano']), row['Escola'], row['Turma'], row['Série'], safe_str(row.get('Espetáculo', '')), safe_str(row.get('Cena', '')), int(row['matricula_id'])))
-            st.toast("✅ Salvo automaticamente!", icon="💾")
+            st.toast("✅ Dados atualizados automaticamente!", icon="💾")
 
 elif menu == "Caderneta / Presença":
     st.title(f"📝 Caderneta Digital: {projeto_atual}")
@@ -468,7 +518,7 @@ elif menu == "Caderneta / Presença":
             if st.session_state['perfil'] == 'professor':
                 prof_logado = st.session_state['nome_prof']
                 st.info(f"👨‍🏫 Turmas do professor(a): **{prof_logado}**")
-                escolas_do_prof = ler_sql("SELECT DISTINCT escola FROM turmas WHERE professor=%s AND projeto=%s", params=(prof_logado, projeto_atual))
+                escolas_do_prof = ler_sql_cached("SELECT DISTINCT escola FROM turmas WHERE professor=%s AND projeto=%s", params=(prof_logado, projeto_atual))
                 escolas_lista = escolas_do_prof['escola'].tolist() if not escolas_do_prof.empty else []
             else:
                 escolas_lista = lista_escolas_limpa
@@ -477,8 +527,8 @@ elif menu == "Caderneta / Presença":
             with colA: esc_chamada = st.selectbox("1. Escola", ["Selecione..."] + escolas_lista)
             
             if esc_chamada != "Selecione...":
-                if prof_logado: t_c = ler_sql("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s AND professor=%s", params=(esc_chamada, projeto_atual, prof_logado))
-                else: t_c = ler_sql("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s", params=(esc_chamada, projeto_atual))
+                if prof_logado: t_c = ler_sql_cached("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s AND professor=%s", params=(esc_chamada, projeto_atual, prof_logado))
+                else: t_c = ler_sql_cached("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s", params=(esc_chamada, projeto_atual))
                 
                 t_c['Serie'] = t_c['nome_turma'].apply(extrair_serie)
                 series_disp = sorted(list(set(t_c['Serie'].tolist())))
@@ -495,6 +545,12 @@ elif menu == "Caderneta / Presença":
             with colC: turma_chamada = st.selectbox("3. Turma / Cena", opc_t_chamada)
 
             if esc_chamada != "Selecione..." and turma_chamada not in ["Selecione...", "Nenhuma turma", "Selecione a escola...", "Selecione a série..."]:
+                
+                # NOVIDADE: Mostrar o nome do professor da turma!
+                prof_da_turma_db = ler_sql_cached("SELECT professor FROM turmas WHERE escola=%s AND nome_turma=%s AND projeto=%s", (esc_chamada, turma_chamada, projeto_atual))
+                if not prof_da_turma_db.empty and prof_da_turma_db.iloc[0]['professor']:
+                    st.markdown(f"👨‍🏫 **Professor Responsável:** {prof_da_turma_db.iloc[0]['professor']}")
+
                 df_alunos = ler_sql('''
                     SELECT a.id as aluno_id, m.id as matricula_id, a.nome_aluno as "Aluno", 
                            m.espetaculo as "Espetáculo", m.cena as "Cena", m.nota_qualitativa as "Qualitativo", m.observacoes as "Observações"
@@ -620,7 +676,7 @@ elif menu == "Caderneta / Presença":
         if st.session_state['perfil'] == 'professor':
             prof_logado = st.session_state['nome_prof']
             st.info(f"👨‍🏫 Turmas do professor(a): **{prof_logado}**")
-            escolas_do_prof = ler_sql("SELECT DISTINCT escola FROM turmas WHERE professor=%s AND projeto=%s", params=(prof_logado, projeto_atual))
+            escolas_do_prof = ler_sql_cached("SELECT DISTINCT escola FROM turmas WHERE professor=%s AND projeto=%s", params=(prof_logado, projeto_atual))
             escolas_lista = escolas_do_prof['escola'].tolist() if not escolas_do_prof.empty else []
         else:
             escolas_lista = lista_escolas_limpa
@@ -630,12 +686,18 @@ elif menu == "Caderneta / Presença":
             
         opc_t_chamada = ["Selecione a escola primeiro..."]
         if esc_chamada != "Selecione...":
-            if prof_logado: t_c = ler_sql("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s AND professor=%s", params=(esc_chamada, projeto_atual, prof_logado))
-            else: t_c = ler_sql("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s", params=(esc_chamada, projeto_atual))
+            if prof_logado: t_c = ler_sql_cached("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s AND professor=%s", params=(esc_chamada, projeto_atual, prof_logado))
+            else: t_c = ler_sql_cached("SELECT nome_turma, professor FROM turmas WHERE escola=%s AND projeto=%s", params=(esc_chamada, projeto_atual))
             opc_t_chamada = ["Selecione..."] + ordenar_turmas(t_c['nome_turma'].tolist()) if not t_c.empty else ["Nenhuma turma"]
         with col4: turma_chamada = st.selectbox("Turma", opc_t_chamada)
 
         if esc_chamada != "Selecione..." and turma_chamada not in ["Selecione...", "Nenhuma turma", "Selecione a escola primeiro..."]:
+            
+            # NOVIDADE: Mostrar o nome do professor da turma!
+            prof_da_turma_db = ler_sql_cached("SELECT professor FROM turmas WHERE escola=%s AND nome_turma=%s AND projeto=%s", (esc_chamada, turma_chamada, projeto_atual))
+            if not prof_da_turma_db.empty and prof_da_turma_db.iloc[0]['professor']:
+                st.markdown(f"👨‍🏫 **Professor Responsável:** {prof_da_turma_db.iloc[0]['professor']}")
+                
             df_alunos_turma = ler_sql('''
                 SELECT a.id as aluno_id, a.nome_aluno as "Aluno" 
                 FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
