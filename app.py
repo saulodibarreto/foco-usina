@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import re
 import psycopg2
+from datetime import date
 
 # Configuração inicial
 st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
@@ -132,7 +133,7 @@ elif menu == "Caderneta / Presença":
     st.title(f"📝 Caderneta Digital: {projeto_atual}")
     
     datas_db = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO DE PALCO', '17/10', 'APRESENT.']
-    datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO\\nPALCO', '17/10', 'APRESENT.']
+    datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO\nPALCO', '17/10', 'APRESENT.']
         
     colA, colB, colC = st.columns(3)
     if st.session_state['perfil'] == 'professor':
@@ -163,8 +164,8 @@ elif menu == "Caderneta / Presença":
 
     if esc_chamada != "Selecione..." and turma_chamada not in ["Selecione...", "Nenhuma turma", "Selecione a escola...", "Selecione a série..."]:
         df_alunos = ler_sql('''
-            SELECT a.id as aluno_id, m.id as matricula_id, a.nome_aluno as Aluno, 
-                   m.espetaculo as Espetáculo, m.cena as Cena, m.nota_qualitativa as Qualitativo, m.observacoes as Observações
+            SELECT a.id as aluno_id, m.id as matricula_id, a.nome_aluno as "Aluno", 
+                   m.espetaculo as "Espetáculo", m.cena as "Cena", m.nota_qualitativa as "Qualitativo", m.observacoes as "Observações"
             FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
             WHERE m.escola=%s AND m.turma=%s AND m.projeto=%s ORDER BY a.nome_aluno
         ''', params=(esc_chamada, turma_chamada, projeto_atual))
@@ -195,7 +196,9 @@ elif menu == "Caderneta / Presença":
             for _, row in df_alunos.iterrows():
                 f_count = sum(1 for c in datas_ui if row[c] == "🔴 F")
                 faltas_list.append(f_count)
-                q_val = row['Qualitativo'] if pd.notna(row['Qualitativo']) else 0.0
+                # Correção do KeyError 'Qualitativo': O nome da coluna pode estar diferente dependendo de como o Postgres o retorna. Forçando a verificação segura:
+                q_val = row.get('Qualitativo', 0.0)
+                if pd.isna(q_val): q_val = 0.0
                 notas_list.append(10.0 - (f_count * 0.5) + float(q_val))
             df_alunos['Faltas'] = faltas_list
             df_alunos['Nota'] = notas_list
@@ -207,10 +210,10 @@ elif menu == "Caderneta / Presença":
             edited_df = st.data_editor(df_alunos, column_config=col_cfg, use_container_width=True)
             if edited_df.reset_index().to_json() != df_alunos_copy.to_json():
                 for _, row in edited_df.iterrows():
-                    a_id, m_id = row['aluno_id'], row['matricula_id']
+                    a_id, m_id = row.get('aluno_id'), row.get('matricula_id')
                     executar_sql("UPDATE matriculas SET espetaculo=%s, cena=%s, nota_qualitativa=%s WHERE id=%s", (safe_str(row.get('Espetáculo','')), safe_str(row.get('Cena','')), float(row.get('Qualitativo',0.0)), m_id))
                     for i in range(len(datas_db)):
-                        val = row[datas_ui[i]]
+                        val = row.get(datas_ui[i])
                         p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
                         executar_sql("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, datas_db[i], p_val))
                 st.toast("✅ Salvo automaticamente!", icon="💾")
@@ -220,7 +223,7 @@ elif menu == "Caderneta / Presença":
                 aluno_obs_nome = st.selectbox("Selecione o Aluno para anotações:", ["Selecione..."] + df_alunos.index.tolist())
                 if aluno_obs_nome != "Selecione...":
                     row_obs = df_alunos.loc[aluno_obs_nome]
-                    nova_obs = st.text_area(f"Anotações para {aluno_obs_nome}:", value=row_obs['Observações'], height=120)
+                    nova_obs = st.text_area(f"Anotações para {aluno_obs_nome}:", value=row_obs.get('Observações', ''), height=120)
                     if st.button("💾 Guardar Anotação no Cofre", type="primary"):
-                        executar_sql("UPDATE matriculas SET observacoes=%s WHERE id=%s", (nova_obs, row_obs['matricula_id']))
+                        executar_sql("UPDATE matriculas SET observacoes=%s WHERE id=%s", (nova_obs, row_obs.get('matricula_id')))
                         st.success("Anotação guardada com segurança!"); st.rerun()
