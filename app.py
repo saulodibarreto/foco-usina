@@ -184,7 +184,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                 with st.form("form_edicao_escolas"):
                     df_esc['Excluir'] = False
                     edited_escolas = st.data_editor(df_esc, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
-                    conf_esc = st.checkbox("Confirmo as exclusões")
+                    conf_esc = st.checkbox("Confirmo as alterações e exclusões de Escolas acima", key="conf_esc")
                     if st.form_submit_button("💾 Salvar Alterações (Escolas)", type="primary"):
                         if not conf_esc and any(edited_escolas['Excluir']): st.error("Marque a confirmação antes de excluir.")
                         else:
@@ -213,7 +213,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                 with st.form("form_edicao_profs"):
                     df_prof['Excluir'] = False
                     edited_profs = st.data_editor(df_prof, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑 Excluir", default=False)}, use_container_width=True)
-                    conf_prof = st.checkbox("Confirmo as exclusões")
+                    conf_prof = st.checkbox("Confirmo as alterações e exclusões de Professores", key="conf_prof")
                     if st.form_submit_button("💾 Salvar Alterações (Profs)", type="primary"):
                         if not conf_prof and any(edited_profs['Excluir']): st.error("Marque a confirmação antes de excluir.")
                         else:
@@ -360,8 +360,10 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                         
                         executar_lote_sql(lote_comandos)
                     st.balloons()
-                    st.success(f"🎉 SUCESSO! A importação foi concluída: {importados_contador} alunos criados e {atualizados_contador} atualizados (Série: {serie_prefix}).")
-
+                    st.success(f"🎉 SUCESSO! A importação foi concluída: {importados_contador} alunos criados e {atualizados_contador} atualizados (Série: {serie_prefix}). A página recarregará em 5 segundos.")
+                    import time
+                    time.sleep(5)
+                    st.rerun()
             except Exception as e:
                 st.error(f"Erro ao processar arquivo: {e}")
 
@@ -448,7 +450,6 @@ elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'a
 
 elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
     st.title(f"👥 Gestão de Alunos: {projeto_atual}")
-    st.info("💡 Edite os alunos na tabela e clique no botão **Salvar Alterações** no final da página.")
     
     with st.expander("🗑️ Apagar Turma Inteira em Lote (Correção de Importação)"):
         st.warning("⚠️ **Atenção:** Esta ação apagará as matrículas de TODOS os alunos da turma selecionada neste projeto. Use apenas para corrigir planilhas importadas errado.")
@@ -468,7 +469,7 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
                 executar_sql("DELETE FROM matriculas WHERE escola=%s AND turma=%s AND projeto=%s", (esc_del, turma_del, projeto_atual))
                 st.success(f"A turma {turma_del} da escola {esc_del} foi apagada com sucesso!")
                 import time
-                time.sleep(1)
+                time.sleep(2)
                 st.rerun()
             elif not confirmar_del:
                 st.error("Marque a caixa de confirmação para poder apagar.")
@@ -482,6 +483,7 @@ elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
             a.responsavel2 as "Resp2", a.telefone2 as "Tel2", m.ano_letivo as "Ano", m.turma as "Turma", 
             m.escola as "Escola", m.espetaculo as "Espetáculo", m.cena as "Cena"
         FROM alunos a JOIN matriculas m ON a.id = m.aluno_id WHERE m.projeto = %s
+        ORDER BY a.nome_aluno
     ''', params=(projeto_atual,))
     
     if df_geral_alunos.empty: st.warning(f"Nenhum aluno registado neste projeto.")
@@ -540,9 +542,10 @@ elif menu == "Caderneta / Presença":
     st.title(f"📝 Caderneta Digital: {projeto_atual}")
     
     if projeto_atual == "Projeto de Teatro Sartre":
-        aba_chamada, aba_resumo = st.tabs(["📝 Fazer Chamada", "📊 Resumo Geral do Projeto"])
+        aba_chamada, aba_resumo = st.tabs(["📝 Fazer Chamada (Por Dia)", "📊 Resumo Geral do Projeto"])
         datas_db = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO DE PALCO', '17/10', 'APRESENT.']
-        datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO\nPALCO', '17/10', 'APRESENT.']
+        datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO
+PALCO', '17/10', 'APRESENT.']
             
         with aba_chamada:
             colA, colB, colC = st.columns(3)
@@ -582,90 +585,97 @@ elif menu == "Caderneta / Presença":
                 if not prof_da_turma_db.empty and prof_da_turma_db.iloc[0]['professor']:
                     st.markdown(f"👨‍🏫 **Professor Responsável:** {prof_da_turma_db.iloc[0]['professor']}")
 
-                df_alunos = ler_sql('''
-                    SELECT a.id as aluno_id, m.id as matricula_id, a.nome_aluno as "Aluno", 
-                           m.espetaculo as "Espetáculo", m.cena as "Cena", m.nota_qualitativa as "Qualitativo", m.observacoes as "Observações"
-                    FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
-                    WHERE m.escola=%s AND m.turma=%s AND m.projeto=%s
-                    ORDER BY a.nome_aluno
-                ''', params=(esc_chamada, turma_chamada, projeto_atual))
+                data_hoje_ui = st.selectbox("📅 4. Selecione a Data da Aula para fazer a chamada:", ["Selecione..."] + datas_ui)
                 
-                if df_alunos.empty: st.error("Não há alunos nesta turma.")
-                else:
-                    aluno_ids_tuple = tuple(df_alunos['aluno_id'].tolist())
-                    if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
-                    else: aluno_ids_tuple = str(aluno_ids_tuple)
-                    
-                    df_freq = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
-                    freq_dict = {(row['aluno_id'], row['data_aula']): row['presente'] for _, row in df_freq.iterrows()}
-                    
-                    col_cfg = {
-                        "aluno_id": None, "matricula_id": None, "Observações": None,
-                        "Aluno": st.column_config.TextColumn("Aluno", disabled=True),
-                        "Espetáculo": st.column_config.TextColumn("Espetác.", width=65),
-                        "Cena": st.column_config.TextColumn("Cena", width=120),
-                        "Faltas": st.column_config.NumberColumn("Faltas", disabled=True, width=60),
-                        "Qualitativo": st.column_config.NumberColumn("Qualit.", format="%.1f", width=65),
-                        "Nota": st.column_config.NumberColumn("Nota Final", disabled=True, width=70)
-                    }
-                    
-                    faltas_list, notas_list = [], []
-                    for i in range(len(datas_db)):
-                        col_banco = datas_db[i]
-                        col_tela = datas_ui[i]
-                        presencas = []
-                        for _, row in df_alunos.iterrows():
-                            ip = freq_dict.get((row['aluno_id'], col_banco), -1)
-                            presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
-                        df_alunos[col_tela] = presencas
-                        col_cfg[col_tela] = st.column_config.SelectboxColumn(col_tela, options=["⚪ -", "🟢 P", "🔴 F"], width=80)
-                    
-                    for _, row in df_alunos.iterrows():
-                        f_count = sum(1 for c in datas_ui if row[c] == "🔴 F")
-                        faltas_list.append(f_count)
-                        q_val = row.get('Qualitativo', 0.0)
-                        if pd.isna(q_val): q_val = 0.0
-                        notas_list.append(10.0 - (f_count * 0.5) + float(q_val))
-                        
-                    df_alunos['Faltas'] = faltas_list
-                    df_alunos['Nota'] = notas_list
-                    
-                    cols_order = ['aluno_id', 'matricula_id', 'Aluno', 'Espetáculo', 'Cena'] + datas_ui + ['Faltas', 'Qualitativo', 'Nota', 'Observações']
-                    df_alunos = df_alunos[cols_order]
-                    df_alunos_copy = df_alunos.copy()
-                    df_alunos = df_alunos.set_index('Aluno')
-                    
-                    st.info("💡 Edite a tabela e clique em **Salvar Chamada e Notas**.")
-                    with st.form("form_caderneta"):
-                        edited_df = st.data_editor(df_alunos, column_config=col_cfg, use_container_width=True)
-                        btn_salvar_chamada = st.form_submit_button("💾 Salvar Chamada e Notas", type="primary")
-                        
-                        if btn_salvar_chamada:
-                            if edited_df.reset_index().to_json() != df_alunos_copy.to_json():
-                                lote_comandos = []
-                                for _, row in edited_df.iterrows():
-                                    a_id, m_id = int(row['aluno_id']), int(row['matricula_id'])
-                                    lote_comandos.append(("UPDATE matriculas SET espetaculo=%s, cena=%s, nota_qualitativa=%s WHERE id=%s", 
-                                              (safe_str(row.get('Espetáculo','')), safe_str(row.get('Cena','')), float(row.get('Qualitativo',0.0)), m_id)))
-                                    for i in range(len(datas_db)):
-                                        val = row[datas_ui[i]]
-                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, datas_db[i], p_val)))
-                                executar_lote_sql(lote_comandos)
-                                st.success("✅ Chamada salva com sucesso!")
-                                import time
-                                time.sleep(1)
-                                st.rerun()
+                if data_hoje_ui != "Selecione...":
+                    idx_data = datas_ui.index(data_hoje_ui)
+                    data_db_selecionada = datas_db[idx_data]
 
-                    st.markdown("---")
-                    with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
-                        aluno_obs_nome = st.selectbox("Selecione o Aluno para anotações:", ["Selecione..."] + df_alunos.index.tolist())
-                        if aluno_obs_nome != "Selecione...":
-                            row_obs = df_alunos.loc[aluno_obs_nome]
-                            nova_obs = st.text_area(f"Anotações para {aluno_obs_nome}:", value=row_obs.get('Observações', ''), height=120)
-                            if st.button("💾 Guardar Anotação no Cofre", type="primary"):
-                                executar_sql("UPDATE matriculas SET observacoes=%s WHERE id=%s", (nova_obs, int(row_obs.get('matricula_id'))))
-                                st.success("Anotação guardada com segurança!"); st.rerun()
+                    df_alunos = ler_sql('''
+                        SELECT a.id as aluno_id, m.id as matricula_id, a.nome_aluno as "Aluno", 
+                               m.espetaculo as "Espetáculo", m.cena as "Cena", m.nota_qualitativa as "Qualitativo", m.observacoes as "Observações"
+                        FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
+                        WHERE m.escola=%s AND m.turma=%s AND m.projeto=%s
+                        ORDER BY a.nome_aluno
+                    ''', params=(esc_chamada, turma_chamada, projeto_atual))
+                    
+                    if df_alunos.empty: st.error("Não há alunos nesta turma.")
+                    else:
+                        aluno_ids_tuple = tuple(df_alunos['aluno_id'].tolist())
+                        if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
+                        else: aluno_ids_tuple = str(aluno_ids_tuple)
+                        
+                        # Trazendo todas as faltas do banco para calcular o histórico total
+                        df_freq_todas = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
+                        
+                        faltas_totais = []
+                        presenca_hoje = []
+                        
+                        for _, row in df_alunos.iterrows():
+                            # Filtrar frequencias deste aluno
+                            freqs_aluno = df_freq_todas[df_freq_todas['aluno_id'] == row['aluno_id']]
+                            
+                            # Contar faltas em todas as datas de `datas_db`
+                            # Uma falta é um registo onde presente == 0
+                            total_f = freqs_aluno[(freqs_aluno['presente'] == 0) & (freqs_aluno['data_aula'].isin(datas_db))].shape[0]
+                            faltas_totais.append(total_f)
+                            
+                            # Pegar o status só da data selecionada
+                            status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
+                            if not status_hoje.empty:
+                                ip = status_hoje.iloc[0]['presente']
+                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                            else:
+                                presenca_hoje.append("⚪ -")
+                                
+                        df_alunos['Total de Faltas'] = faltas_totais
+                        df_alunos['Frequência Nesta Data'] = presenca_hoje
+                        
+                        col_cfg = {
+                            "aluno_id": None, "matricula_id": None, "Observações": None, "Qualitativo": None,
+                            "Aluno": st.column_config.TextColumn("Aluno", disabled=True),
+                            "Espetáculo": st.column_config.TextColumn("Espetác.", width=80),
+                            "Cena": st.column_config.TextColumn("Cena", width=120),
+                            "Total de Faltas": st.column_config.NumberColumn("Total de Faltas", disabled=True, width=100),
+                            "Frequência Nesta Data": st.column_config.SelectboxColumn("Frequência Nesta Data", options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=150)
+                        }
+                        
+                        cols_order = ['aluno_id', 'matricula_id', 'Aluno', 'Espetáculo', 'Cena', 'Total de Faltas', 'Frequência Nesta Data']
+                        df_display = df_alunos[cols_order].set_index('Aluno')
+                        df_display_copy = df_display.copy()
+                        
+                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Edite e clique em **Salvar Chamada**.")
+                        with st.form("form_caderneta"):
+                            edited_df = st.data_editor(df_display, column_config=col_cfg, use_container_width=True)
+                            btn_salvar_chamada = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
+                            
+                            if btn_salvar_chamada:
+                                if edited_df.reset_index().to_json() != df_display_copy.reset_index().to_json():
+                                    lote_comandos = []
+                                    for _, row in edited_df.reset_index().iterrows():
+                                        a_id, m_id = int(row['aluno_id']), int(row['matricula_id'])
+                                        lote_comandos.append(("UPDATE matriculas SET espetaculo=%s, cena=%s WHERE id=%s", 
+                                                  (safe_str(row.get('Espetáculo','')), safe_str(row.get('Cena','')), m_id)))
+                                        
+                                        val = row['Frequência Nesta Data']
+                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                    
+                                    executar_lote_sql(lote_comandos)
+                                    st.success("✅ Chamada salva com sucesso!")
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
+
+                        st.markdown("---")
+                        with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
+                            aluno_obs_nome = st.selectbox("Selecione o Aluno para anotações:", ["Selecione..."] + df_alunos['Aluno'].tolist())
+                            if aluno_obs_nome != "Selecione...":
+                                row_obs = df_alunos[df_alunos['Aluno'] == aluno_obs_nome].iloc[0]
+                                nova_obs = st.text_area(f"Anotações para {aluno_obs_nome}:", value=row_obs.get('Observações', ''), height=120)
+                                if st.button("💾 Guardar Anotação no Cofre", type="primary"):
+                                    executar_sql("UPDATE matriculas SET observacoes=%s WHERE id=%s", (nova_obs, int(row_obs.get('matricula_id'))))
+                                    st.success("Anotação guardada com segurança!"); st.rerun()
 
         with aba_resumo:
             st.subheader("📊 Resumo Geral do Projeto")
@@ -703,7 +713,28 @@ elif menu == "Caderneta / Presença":
                 cols_r = ['ESCOLA', 'TURMA', 'ESPETÁCULO', 'CENA', 'ALUNO'] + datas_ui + ['FALTAS', 'QUALIT', 'NOTA FINAL', 'OBSERVAÇÕES']
                 df_resumo_limpo = df_resumo_limpo[cols_r]
                 
-                st.dataframe(df_resumo_limpo, use_container_width=True, hide_index=True)
+                # NOVIDADE: Permite atualizar APENAS a nota Qualitativa pelo Resumo Geral de forma muito rápida
+                st.info("💡 Você pode editar a coluna **QUALIT** diretamente abaixo e salvar as alterações no banco de dados.")
+                with st.form("form_edicao_qualit"):
+                    col_cfg_resumo = {c: st.column_config.Column(disabled=True) for c in df_resumo_limpo.columns}
+                    col_cfg_resumo['QUALIT'] = st.column_config.NumberColumn("QUALIT", format="%.1f", disabled=False)
+                    
+                    edited_resumo = st.data_editor(df_resumo_limpo, column_config=col_cfg_resumo, use_container_width=True, hide_index=True)
+                    if st.form_submit_button("💾 Salvar Notas Qualitativas", type="primary"):
+                        if edited_resumo['QUALIT'].to_list() != df_resumo_limpo['QUALIT'].to_list():
+                            lote_comandos = []
+                            for idx, row in edited_resumo.iterrows():
+                                if row['QUALIT'] != df_resumo_limpo.iloc[idx]['QUALIT']:
+                                    a_nome = row['ALUNO']
+                                    a_turma = row['TURMA']
+                                    a_escola = row['ESCOLA']
+                                    lote_comandos.append(("UPDATE matriculas SET nota_qualitativa=%s WHERE aluno_id = (SELECT id FROM alunos WHERE nome_aluno=%s LIMIT 1) AND turma=%s AND escola=%s AND projeto=%s", (float(row['QUALIT']), a_nome, a_turma, a_escola, projeto_atual)))
+                            executar_lote_sql(lote_comandos)
+                            st.success("✅ Notas Qualitativas atualizadas com sucesso!")
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_resumo_limpo.to_excel(writer, index=False, sheet_name='Resumo Geral')
@@ -740,65 +771,87 @@ elif menu == "Caderneta / Presença":
             if not prof_da_turma_db.empty and prof_da_turma_db.iloc[0]['professor']:
                 st.markdown(f"👨‍🏫 **Professor Responsável:** {prof_da_turma_db.iloc[0]['professor']}")
                 
-            df_alunos_turma = ler_sql('''
-                SELECT a.id as aluno_id, a.nome_aluno as "Aluno" 
-                FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
-                WHERE m.escola=%s AND m.turma=%s AND m.ano_letivo=%s AND m.projeto=%s
-                ORDER BY a.nome_aluno
-            ''', params=(esc_chamada, turma_chamada, ano_sel, projeto_atual))
-            
-            if df_alunos_turma.empty: st.error(f"Não há alunos ativos nesta turma.")
-            else:
-                dias_map = {'SEG': 0, 'TER': 1, 'QUA': 2, 'QUI': 3, 'SEX': 4, 'SAB': 5, 'DOM': 6}
-                datas_ui, datas_db = [], []
-                m_num = meses_map[mes_sel]
-                num_dias = calendar.monthrange(ano_sel, m_num)[1]
-                for dia in range(1, num_dias + 1):
-                    d_atual = date(ano_sel, m_num, dia)
-                    for sigla, num_ds in dias_map.items():
-                        if sigla in turma_chamada.upper() and d_atual.weekday() == num_ds:
-                            datas_ui.append(f"{dia:02d}/{m_num:02d} {sigla}")
-                            datas_db.append(d_atual.strftime("%Y-%m-%d"))
+            dias_map = {'SEG': 0, 'TER': 1, 'QUA': 2, 'QUI': 3, 'SEX': 4, 'SAB': 5, 'DOM': 6}
+            datas_ui, datas_db = [], []
+            m_num = meses_map[mes_sel]
+            num_dias = calendar.monthrange(ano_sel, m_num)[1]
+            for dia in range(1, num_dias + 1):
+                d_atual = date(ano_sel, m_num, dia)
+                for sigla, num_ds in dias_map.items():
+                    if sigla in turma_chamada.upper() and d_atual.weekday() == num_ds:
+                        datas_ui.append(f"{dia:02d}/{m_num:02d} {sigla}")
+                        datas_db.append(d_atual.strftime("%Y-%m-%d"))
 
-                df_alunos_turma = df_alunos_turma.set_index('Aluno')
+            if not datas_ui:
+                st.warning("Não há aulas programadas para os dias desta turma neste mês específico.")
+            else:
+                data_hoje_ui = st.selectbox("📅 Selecione a Data da Aula para fazer a chamada:", ["Selecione..."] + datas_ui)
                 
-                aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
-                if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
-                else: aluno_ids_tuple = str(aluno_ids_tuple)
-                df_freq = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
-                freq_dict = {(row['aluno_id'], row['data_aula']): row['presente'] for _, row in df_freq.iterrows()}
-                
-                col_cfg = {"aluno_id": None}
-                for i, col_ui in enumerate(datas_ui):
-                    col_db = datas_db[i]
-                    presencas = []
-                    for a_id in df_alunos_turma['aluno_id']:
-                        ip = freq_dict.get((a_id, col_db), -1)
-                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
-                    df_alunos_turma[col_ui] = presencas
-                    col_cfg[col_ui] = st.column_config.SelectboxColumn(col_ui, options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=85)
-                
-                df_alunos_turma_copy = df_alunos_turma.copy()
-                
-                st.info("💡 Preencha a chamada para toda a turma e clique em **Salvar Chamada**.")
-                with st.form("form_caderneta_extra"):
-                    edited_df = st.data_editor(df_alunos_turma, column_config=col_cfg, use_container_width=True)
-                    btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada", type="primary")
+                if data_hoje_ui != "Selecione...":
+                    idx_data = datas_ui.index(data_hoje_ui)
+                    data_db_selecionada = datas_db[idx_data]
+
+                    df_alunos_turma = ler_sql('''
+                        SELECT a.id as aluno_id, a.nome_aluno as "Aluno" 
+                        FROM alunos a JOIN matriculas m ON a.id = m.aluno_id 
+                        WHERE m.escola=%s AND m.turma=%s AND m.ano_letivo=%s AND m.projeto=%s
+                        ORDER BY a.nome_aluno
+                    ''', params=(esc_chamada, turma_chamada, ano_sel, projeto_atual))
                     
-                    if btn_salvar_chamada_extra:
-                        if edited_df.reset_index().to_json() != df_alunos_turma_copy.to_json():
-                            lote_comandos = []
-                            for _, row in edited_df.iterrows():
-                                a_id = int(row['aluno_id'])
-                                for i, cui in enumerate(datas_ui):
-                                    val = row[cui]
-                                    p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, datas_db[i], p_val)))
-                            executar_lote_sql(lote_comandos)
-                            st.success("✅ Chamada salva com sucesso!")
-                            import time
-                            time.sleep(1)
-                            st.rerun()
+                    if df_alunos_turma.empty: st.error(f"Não há alunos ativos nesta turma.")
+                    else:
+                        aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
+                        if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
+                        else: aluno_ids_tuple = str(aluno_ids_tuple)
+                        
+                        df_freq_todas = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
+                        
+                        faltas_mes = []
+                        presenca_hoje = []
+                        
+                        for _, row in df_alunos_turma.iterrows():
+                            freqs_aluno = df_freq_todas[df_freq_todas['aluno_id'] == row['aluno_id']]
+                            total_f = freqs_aluno[(freqs_aluno['presente'] == 0) & (freqs_aluno['data_aula'].isin(datas_db))].shape[0]
+                            faltas_mes.append(total_f)
+                            
+                            status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
+                            if not status_hoje.empty:
+                                ip = status_hoje.iloc[0]['presente']
+                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                            else:
+                                presenca_hoje.append("⚪ -")
+
+                        df_alunos_turma['Faltas neste Mês'] = faltas_mes
+                        df_alunos_turma['Frequência Nesta Data'] = presenca_hoje
+                        
+                        col_cfg = {
+                            "aluno_id": None,
+                            "Aluno": st.column_config.TextColumn("Aluno", disabled=True),
+                            "Faltas neste Mês": st.column_config.NumberColumn("Faltas neste Mês", disabled=True, width=120),
+                            "Frequência Nesta Data": st.column_config.SelectboxColumn("Frequência Nesta Data", options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=150)
+                        }
+                        
+                        df_display = df_alunos_turma[['aluno_id', 'Aluno', 'Faltas neste Mês', 'Frequência Nesta Data']].set_index('Aluno')
+                        df_display_copy = df_display.copy()
+                        
+                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Edite e clique em **Salvar Chamada**.")
+                        with st.form("form_caderneta_extra"):
+                            edited_df = st.data_editor(df_display, column_config=col_cfg, use_container_width=True)
+                            btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
+                            
+                            if btn_salvar_chamada_extra:
+                                if edited_df.reset_index().to_json() != df_display_copy.reset_index().to_json():
+                                    lote_comandos = []
+                                    for _, row in edited_df.reset_index().iterrows():
+                                        a_id = int(row['aluno_id'])
+                                        val = row['Frequência Nesta Data']
+                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                    executar_lote_sql(lote_comandos)
+                                    st.success("✅ Chamada salva com sucesso!")
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
