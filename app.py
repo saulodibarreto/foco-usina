@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import os
@@ -81,14 +82,14 @@ if 'logado' not in st.session_state:
     st.session_state['perfil'] = None
     st.session_state['nome_prof'] = None
 
-for key in ['key_escola', 'key_turma', 'key_matricula', 'key_prof', 'key_user']:
+for key in ['key_escola', 'key_turma', 'key_matricula', 'key_prof', 'key_user', 'key_novo_aluno']:
     if key not in st.session_state: st.session_state[key] = 0
 
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         if os.path.exists("FOCO USINA DE ARTES.png"): st.image("FOCO USINA DE ARTES.png", use_container_width=True)
-        st.markdown("<h2 style='text-align: center;'>Acesso ao Sistema</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>🎭 Foco Usina - Acesso</h2>", unsafe_allow_html=True)
         
         with st.form("form_login"):
             usuario_input = st.text_input("Usuário")
@@ -173,7 +174,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.rerun()
         with colE2:
             st.subheader("Escolas deste Projeto")
-            df_esc = ler_sql("SELECT id, nome_escola as Escola FROM escolas WHERE projeto=%s", params=(projeto_atual,))
+            df_esc = ler_sql("SELECT id, nome_escola as "Escola" FROM escolas WHERE projeto=%s", params=(projeto_atual,))
             if not df_esc.empty:
                 df_esc['Excluir'] = False
                 edited_escolas = st.data_editor(df_esc, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
@@ -196,7 +197,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.rerun()
         with colP2:
             st.subheader("Professores deste Projeto")
-            df_prof = ler_sql("SELECT id, nome_professor as Nome FROM professores WHERE projeto=%s", params=(projeto_atual,))
+            df_prof = ler_sql("SELECT id, nome_professor as "Nome" FROM professores WHERE projeto=%s", params=(projeto_atual,))
             if not df_prof.empty:
                 df_prof['Excluir'] = False
                 edited_profs = st.data_editor(df_prof, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑 Excluir", default=False)}, use_container_width=True)
@@ -221,7 +222,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                         st.rerun()
         with colT2:
             st.subheader("Turmas deste Projeto")
-            df_turmas = ler_sql("SELECT id, escola as Escola, nome_turma as Turma, professor as Professor FROM turmas WHERE projeto=%s", params=(projeto_atual,))
+            df_turmas = ler_sql("SELECT id, escola as "Escola", nome_turma as "Turma", professor as "Professor" FROM turmas WHERE projeto=%s", params=(projeto_atual,))
             if not df_turmas.empty:
                 turmas_lista = ordenar_turmas(df_turmas['Turma'].tolist())
                 df_turmas['Turma'] = pd.Categorical(df_turmas['Turma'], categories=turmas_lista, ordered=True)
@@ -245,7 +246,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
     with aba_importar:
         st.subheader(f"📥 Importação Mágica: {projeto_atual}")
         escola_importacao = st.selectbox("Para qual ESCOLA deseja importar estes alunos?", ["Selecione..."] + lista_escolas_limpa)
-        arquivo_submetido = st.file_uploader("Escolha o ficheiro Excel (.xlsx) ou CSV", type=["xlsx", "csv"])
+        arquivo_submetido = st.file_uploader("Escolha o arquivo Excel (.xlsx) ou CSV", type=["xlsx", "csv"])
         
         if arquivo_submetido is not None and escola_importacao != "Selecione...":
             try:
@@ -331,7 +332,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                                         executar_sql("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (int(aluno_id), db_date, p_val))
                     st.success(f"🎉 Importação completa! {importados_contador} criados e {atualizados_contador} atualizados (Série: {serie_prefix}).")
             except Exception as e:
-                st.error(f"Erro ao processar ficheiro: {e}")
+                st.error(f"Erro ao processar arquivo: {e}")
 
     with aba_acessos:
         st.subheader("🔐 Gestão de Logins")
@@ -351,7 +352,7 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                             st.success(f"✅ Usuário {novo_login} criado!"); st.session_state.key_user += 1; st.rerun()
                         except: st.error("⚠️ Este nome de usuário já existe.")
         with colA2:
-            df_users = ler_sql("SELECT id, login as Usuário, perfil as Perfil, nome_professor as Professor FROM usuarios")
+            df_users = ler_sql("SELECT id, login as "Usuário", perfil as "Perfil", nome_professor as "Professor" FROM usuarios")
             if not df_users.empty:
                 df_users['Excluir'] = False
                 edited_users = st.data_editor(df_users, hide_index=True, column_config={"id": None, "Excluir": st.column_config.CheckboxColumn("🗑️ Excluir", default=False)}, use_container_width=True)
@@ -362,7 +363,50 @@ elif menu == "Escolas, Turmas, Profs e Acessos" and st.session_state['perfil'] =
                     st.success("✅ Atualizado!"); st.rerun()
 
 elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'admin':
-    st.info("Utilize a ferramenta 'Importar Planilha Mágica' no menu de Gestão Base para cadastrar rapidamente.")
+    st.title(f"➕ Cadastro Manual: {projeto_atual}")
+    st.info("Utilize a ferramenta 'Importar Planilha Mágica' no menu de Gestão Base para cadastrar em lote rapidamente.")
+    
+    with st.form(f"form_novo_aluno_{st.session_state.key_novo_aluno}"):
+        st.subheader("Dados do Aluno")
+        nome_novo = st.text_input("Nome Completo do Aluno *", placeholder="Ex: João da Silva")
+        col1, col2 = st.columns(2)
+        with col1:
+            serie_nova = st.text_input("Série / Ano", placeholder="Ex: 6º Ano")
+            escola_nova = st.selectbox("Escola *", ["Selecione..."] + lista_escolas_limpa)
+        with col2:
+            turmas_cadastradas = []
+            if escola_nova != "Selecione...":
+                df_t = ler_sql("SELECT nome_turma FROM turmas WHERE escola=%s AND projeto=%s", params=(escola_nova, projeto_atual))
+                turmas_cadastradas = ordenar_turmas(df_t['nome_turma'].tolist())
+            turma_nova = st.selectbox("Turma *", ["Selecione..."] + turmas_cadastradas)
+        
+        st.markdown("---")
+        st.subheader("Responsáveis e Contato")
+        c1, c2, c3 = st.columns(3)
+        with c1: 
+            resp_novo = st.text_input("Responsável Principal")
+            cpf_novo = st.text_input("CPF do Responsável", placeholder="Apenas números")
+        with c2: tel_novo = st.text_input("Telefone 1", placeholder="Apenas números com DDD")
+        with c3: 
+            resp2_novo = st.text_input("Responsável Secundário")
+            tel2_novo = st.text_input("Telefone 2", placeholder="Apenas números com DDD")
+        
+        st.markdown("---")
+        if st.form_submit_button("✅ Salvar Cadastro", type="primary"):
+            if nome_novo.strip() and escola_nova != "Selecione..." and turma_nova != "Selecione...":
+                cur = conn.cursor()
+                cur.execute("INSERT INTO alunos (nome_aluno, responsavel, cpf_responsavel, telefone, responsavel2, telefone2) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id", 
+                          (nome_novo.strip(), resp_novo.strip(), formatar_cpf(cpf_novo), formatar_telefone(tel_novo), resp2_novo.strip(), formatar_telefone(tel2_novo)))
+                novo_id = cur.fetchone()[0]
+                cur.execute('''INSERT INTO matriculas (aluno_id, ano_letivo, escola, turma, serie_aluno, projeto) 
+                             VALUES (%s, 2026, %s, %s, %s, %s)''', (novo_id, escola_nova, turma_nova, serie_nova.strip(), projeto_atual))
+                conn.commit()
+                cur.close()
+                st.success(f"Aluno **{nome_novo}** cadastrado com sucesso!")
+                st.session_state.key_novo_aluno += 1
+                st.rerun()
+            else:
+                st.error("Por favor, preencha o Nome, a Escola e a Turma.")
 
 elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
     st.title(f"👥 Gestão de Alunos: {projeto_atual}")
