@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import re
-import io
 import psycopg2
-from datetime import date
 
 # Configuração inicial
 st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
@@ -106,7 +104,6 @@ if menu == "Dashboard":
     st.write(f"Bem-vindo ao sistema da Foco Usina de Artes, **{st.session_state['usuario'].title()}**.")
     st.info(f"📌 Você está no ambiente: **{projeto_atual}**.")
     
-    # Mostrar estatísticas rápidas
     total_alunos = ler_sql("SELECT COUNT(DISTINCT a.id) as total FROM alunos a JOIN matriculas m ON a.id = m.aluno_id WHERE m.projeto=%s", (projeto_atual,))['total'][0]
     st.metric("Total de Alunos neste Projeto", total_alunos)
 
@@ -135,7 +132,7 @@ elif menu == "Caderneta / Presença":
     st.title(f"📝 Caderneta Digital: {projeto_atual}")
     
     datas_db = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO DE PALCO', '17/10', 'APRESENT.']
-    datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO\nPALCO', '17/10', 'APRESENT.']
+    datas_ui = ['25/07', '01/08', '12/09', '18/09', '22/09', '26/09', 'ENSAIO\\nPALCO', '17/10', 'APRESENT.']
         
     colA, colB, colC = st.columns(3)
     if st.session_state['perfil'] == 'professor':
