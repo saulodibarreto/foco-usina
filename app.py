@@ -11,16 +11,27 @@ from datetime import date
 # Configuração inicial
 st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
 
-# CSS para adicionar a palavra "MENU" ao lado do botão de expandir no celular
+# CSS para o MENU no celular e design
 st.markdown('''
     <style>
+        /* Tornar o botão de expandir o menu mais visível no celular */
+        [data-testid="collapsedControl"] {
+            width: auto !important;
+            padding-right: 15px !important;
+            background-color: transparent !important;
+        }
         [data-testid="collapsedControl"]::after {
-            content: " MENU";
-            font-weight: bold;
-            font-size: 1.1rem;
-            margin-left: 8px;
-            vertical-align: middle;
-            color: #31333F;
+            content: "MENU";
+            font-weight: 800 !important;
+            font-size: 1.1rem !important;
+            margin-left: 5px !important;
+            vertical-align: middle !important;
+            color: #ff4b4b !important;
+            display: inline-block !important;
+        }
+        /* Melhorar o design das bolinhas de chamada (Radio) */
+        div[role="radiogroup"] {
+            gap: 20px !important;
         }
     </style>
 ''', unsafe_allow_html=True)
@@ -102,14 +113,20 @@ if 'logado' not in st.session_state:
     st.session_state['perfil'] = None
     st.session_state['nome_prof'] = None
 
+# Gerenciador de avisos da chamada
+if 'aviso_chamada' not in st.session_state:
+    st.session_state['aviso_chamada'] = []
+
 for key in ['key_escola', 'key_turma', 'key_matricula', 'key_prof', 'key_user', 'key_novo_aluno']:
     if key not in st.session_state: st.session_state[key] = 0
 
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        if os.path.exists("FOCO USINA DE ARTES.png"): st.image("FOCO USINA DE ARTES.png", use_container_width=True)
-        st.markdown("<h2 style='text-align: center;'>Foco Usina - Acesso</h2>", unsafe_allow_html=True)
+        if os.path.exists("FOCO USINA DE ARTES.png"): 
+            st.image("FOCO USINA DE ARTES.png", width=220) # TAMANHO REDUZIDO E ELEGANTE PARA PC
+        else:
+            st.markdown("<h2 style='text-align: center;'>Foco Usina - Acesso</h2>", unsafe_allow_html=True)
         
         with st.form("form_login"):
             usuario_input = st.text_input("Usuário")
@@ -129,8 +146,10 @@ if not st.session_state['logado']:
                     st.error("⚠️ Usuário ou senha incorretos.")
     st.stop()
 
-if os.path.exists("FOCO USINA DE ARTES.png"): st.sidebar.image("FOCO USINA DE ARTES.png", use_container_width=True)
-else: st.sidebar.title("Foco Usina")
+if os.path.exists("FOCO USINA DE ARTES.png"): 
+    st.sidebar.image("FOCO USINA DE ARTES.png", width=160) # TAMANHO REDUZIDO NO MENU LATERAL
+else: 
+    st.sidebar.title("Foco Usina")
 
 st.sidebar.markdown(f"👤 **Logado como:** {st.session_state['usuario'].title()} ({st.session_state['perfil']})")
 if st.sidebar.button("Sair / Logout"):
@@ -632,23 +651,34 @@ elif menu == "Caderneta / Presença":
                             status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
                             if not status_hoje.empty:
                                 ip = status_hoje.iloc[0]['presente']
-                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else None))
                             else:
-                                presenca_hoje.append("⚪ -")
+                                presenca_hoje.append(None)
                                 
                         df_alunos['Total de Faltas'] = faltas_totais
                         df_alunos['Frequência Nesta Data'] = presenca_hoje
                         
+                        # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
+                        if st.session_state['aviso_chamada']:
+                            st.warning(f"⚠️ **Atenção:** A sua chamada foi guardada, mas você esqueceu de preencher a presença dos seguintes alunos: {', '.join(st.session_state['aviso_chamada'])}")
+                            if st.button("✅ OK, Ciente (Ocultar Aviso)"):
+                                st.session_state['aviso_chamada'] = []
+                                st.rerun()
+                                
                         st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
                         with st.form("form_caderneta"):
                             resultados_chamada = {}
                             
                             for _, row in df_alunos.iterrows():
                                 st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas: {row['Total de Faltas']} | Cena: {safe_str(row['Cena'])})</span>", unsafe_allow_html=True)
+                                
+                                val_atual = row['Frequência Nesta Data']
+                                idx_pres = ["🟢 P", "🔴 F"].index(val_atual) if val_atual in ["🟢 P", "🔴 F"] else None
+                                
                                 resultados_chamada[row['aluno_id']] = st.radio(
                                     "Presença",
-                                    ["⚪ -", "🟢 P", "🔴 F"],
-                                    index=["⚪ -", "🟢 P", "🔴 F"].index(row['Frequência Nesta Data']),
+                                    ["🟢 P", "🔴 F"],
+                                    index=idx_pres,
                                     horizontal=True,
                                     key=f"pres_{row['aluno_id']}",
                                     label_visibility="collapsed"
@@ -658,19 +688,24 @@ elif menu == "Caderneta / Presença":
                             btn_salvar_chamada = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
                             
                             if btn_salvar_chamada:
-                                pendentes = [df_alunos[df_alunos['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val == "⚪ -"]
-                                if pendentes:
-                                    st.error(f"⚠️ **A chamada NÃO foi salva!** Faltou marcar a presença de: {', '.join(pendentes)}")
-                                else:
-                                    lote_comandos = []
-                                    for a_id, val in resultados_chamada.items():
-                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                pendentes = [df_alunos[df_alunos['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val is None]
+                                
+                                lote_comandos = []
+                                for a_id, val in resultados_chamada.items():
+                                    if val is not None:
+                                        p_val = 1 if val == "🟢 P" else 0
                                         lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                
+                                if lote_comandos:
                                     executar_lote_sql(lote_comandos)
-                                    st.success("✅ Chamada salva com sucesso!")
-                                    import time
-                                    time.sleep(1)
-                                    st.rerun()
+                                
+                                if pendentes:
+                                    st.session_state['aviso_chamada'] = pendentes
+                                else:
+                                    st.session_state['aviso_chamada'] = []
+                                    st.success("✅ Chamada completa e salva com sucesso!")
+                                
+                                st.rerun()
 
                         st.markdown("---")
                         with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
@@ -825,23 +860,34 @@ elif menu == "Caderneta / Presença":
                             status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
                             if not status_hoje.empty:
                                 ip = status_hoje.iloc[0]['presente']
-                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else None))
                             else:
-                                presenca_hoje.append("⚪ -")
+                                presenca_hoje.append(None)
 
                         df_alunos_turma['Faltas neste Mês'] = faltas_mes
                         df_alunos_turma['Frequência Nesta Data'] = presenca_hoje
                         
+                        # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
+                        if st.session_state['aviso_chamada']:
+                            st.warning(f"⚠️ **Atenção:** A sua chamada foi guardada, mas você esqueceu de preencher a presença dos seguintes alunos: {', '.join(st.session_state['aviso_chamada'])}")
+                            if st.button("✅ OK, Ciente (Ocultar Aviso)"):
+                                st.session_state['aviso_chamada'] = []
+                                st.rerun()
+
                         st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
                         with st.form("form_caderneta_extra"):
                             resultados_chamada = {}
                             
                             for _, row in df_alunos_turma.iterrows():
                                 st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas neste mês: {row['Faltas neste Mês']})</span>", unsafe_allow_html=True)
+                                
+                                val_atual = row['Frequência Nesta Data']
+                                idx_pres = ["🟢 P", "🔴 F"].index(val_atual) if val_atual in ["🟢 P", "🔴 F"] else None
+
                                 resultados_chamada[row['aluno_id']] = st.radio(
                                     "Presença",
-                                    ["⚪ -", "🟢 P", "🔴 F"],
-                                    index=["⚪ -", "🟢 P", "🔴 F"].index(row['Frequência Nesta Data']),
+                                    ["🟢 P", "🔴 F"],
+                                    index=idx_pres,
                                     horizontal=True,
                                     key=f"pres_{row['aluno_id']}",
                                     label_visibility="collapsed"
@@ -851,19 +897,24 @@ elif menu == "Caderneta / Presença":
                             btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
                             
                             if btn_salvar_chamada_extra:
-                                pendentes = [df_alunos_turma[df_alunos_turma['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val == "⚪ -"]
-                                if pendentes:
-                                    st.error(f"⚠️ **A chamada NÃO foi salva!** Faltou marcar a presença dos seguintes alunos: {', '.join(pendentes)}")
-                                else:
-                                    lote_comandos = []
-                                    for a_id, val in resultados_chamada.items():
-                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                pendentes = [df_alunos_turma[df_alunos_turma['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val is None]
+                                
+                                lote_comandos = []
+                                for a_id, val in resultados_chamada.items():
+                                    if val is not None:
+                                        p_val = 1 if val == "🟢 P" else 0
                                         lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                
+                                if lote_comandos:
                                     executar_lote_sql(lote_comandos)
-                                    st.success("✅ Chamada salva com sucesso!")
-                                    import time
-                                    time.sleep(1)
-                                    st.rerun()
+                                
+                                if pendentes:
+                                    st.session_state['aviso_chamada'] = pendentes
+                                else:
+                                    st.session_state['aviso_chamada'] = []
+                                    st.success("✅ Chamada completa e salva com sucesso!")
+                                
+                                st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
