@@ -6,6 +6,7 @@ import re
 import calendar
 import io
 import psycopg2
+import base64
 from datetime import date
 
 # Configuração inicial
@@ -14,20 +15,30 @@ st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
 # CSS para o MENU no celular e design
 st.markdown('''
     <style>
-        /* Tornar o botão de expandir o menu mais visível no celular */
-        [data-testid="collapsedControl"] {
+        /* Transformar o ícone de expandir num botão MENU claro e forçar a largura */
+        button[data-testid="collapsedControl"] {
             width: auto !important;
-            padding-right: 15px !important;
+            padding: 0.3rem 0.8rem !important;
+            border-radius: 5px !important;
+            border: 2px solid var(--primary-color) !important;
             background-color: transparent !important;
+            display: flex !important;
+            align-items: center !important;
+            overflow: visible !important;
+            margin: 10px !important;
+            z-index: 9999 !important;
         }
-        [data-testid="collapsedControl"]::after {
+        button[data-testid="collapsedControl"] svg {
+            fill: var(--primary-color) !important;
+            color: var(--primary-color) !important;
+        }
+        button[data-testid="collapsedControl"]::after {
             content: "MENU";
+            font-family: sans-serif;
             font-weight: 800 !important;
-            font-size: 1.1rem !important;
-            margin-left: 5px !important;
-            vertical-align: middle !important;
-            color: #ff4b4b !important;
-            display: inline-block !important;
+            font-size: 0.95rem !important;
+            margin-left: 6px !important;
+            color: var(--primary-color) !important;
         }
         /* Melhorar o design das bolinhas de chamada (Radio) */
         div[role="radiogroup"] {
@@ -77,6 +88,11 @@ def ordenar_turmas(lista_turmas):
         return (dia_val, hora_val, str(nome))
     return sorted(list(set([str(t) for t in lista_turmas if pd.notna(t) and safe_str(t) != ""])), key=chave_ordem)
 
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
 # --- BASE DE DADOS (SUPABASE POSTGRES) ---
 @st.cache_resource
 def init_connection():
@@ -123,8 +139,17 @@ for key in ['key_escola', 'key_turma', 'key_matricula', 'key_prof', 'key_user', 
 if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
+        st.write("") # Espaçador
         if os.path.exists("FOCO USINA DE ARTES.png"): 
-            st.image("FOCO USINA DE ARTES.png", width=220) # TAMANHO REDUZIDO E ELEGANTE PARA PC
+            img_b64 = get_base64_of_bin_file("FOCO USINA DE ARTES.png")
+            st.markdown(
+                f'''
+                <div style="display: flex; justify-content: center; margin-bottom: 25px; margin-top: 20px;">
+                    <img src="data:image/png;base64,{img_b64}" width="220">
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
         else:
             st.markdown("<h2 style='text-align: center;'>Foco Usina - Acesso</h2>", unsafe_allow_html=True)
         
@@ -147,7 +172,15 @@ if not st.session_state['logado']:
     st.stop()
 
 if os.path.exists("FOCO USINA DE ARTES.png"): 
-    st.sidebar.image("FOCO USINA DE ARTES.png", width=160) # TAMANHO REDUZIDO NO MENU LATERAL
+    img_sidebar_b64 = get_base64_of_bin_file("FOCO USINA DE ARTES.png")
+    st.sidebar.markdown(
+        f'''
+        <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+            <img src="data:image/png;base64,{img_sidebar_b64}" width="160">
+        </div>
+        ''',
+        unsafe_allow_html=True
+    )
 else: 
     st.sidebar.title("Foco Usina")
 
@@ -660,7 +693,7 @@ elif menu == "Caderneta / Presença":
                         
                         # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
                         if st.session_state['aviso_chamada']:
-                            st.warning(f"⚠️ **Atenção:** A sua chamada foi guardada, mas você esqueceu de preencher a presença dos seguintes alunos: {', '.join(st.session_state['aviso_chamada'])}")
+                            st.warning(f"⚠️ **Atenção:** A sua chamada foi salva, mas você esqueceu de preencher a presença de: {', '.join(st.session_state['aviso_chamada'])}")
                             if st.button("✅ OK, Ciente (Ocultar Aviso)"):
                                 st.session_state['aviso_chamada'] = []
                                 st.rerun()
@@ -735,8 +768,8 @@ elif menu == "Caderneta / Presença":
                     presencas = []
                     for _, row in df_resumo.iterrows():
                         ip = freq_dict.get((row['aluno_id'], col_banco), -1)
-                        # ISSO AQUI VAI PINTAR O F DE VERMELHO NATURALMENTE NA TABELA RESUMO!
-                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                        # Pinta o F de vermelho e P de verde no Resumo!
+                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "-"))
                     df_resumo[col_tela] = presencas
                 
                 faltas_list, notas_list = [], []
@@ -869,7 +902,7 @@ elif menu == "Caderneta / Presença":
                         
                         # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
                         if st.session_state['aviso_chamada']:
-                            st.warning(f"⚠️ **Atenção:** A sua chamada foi guardada, mas você esqueceu de preencher a presença dos seguintes alunos: {', '.join(st.session_state['aviso_chamada'])}")
+                            st.warning(f"⚠️ **Atenção:** A sua chamada foi salva, mas você esqueceu de preencher a presença de: {', '.join(st.session_state['aviso_chamada'])}")
                             if st.button("✅ OK, Ciente (Ocultar Aviso)"):
                                 st.session_state['aviso_chamada'] = []
                                 st.rerun()
