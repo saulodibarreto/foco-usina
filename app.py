@@ -450,6 +450,7 @@ elif menu == "Cadastrar Aluno / Matrícula" and st.session_state['perfil'] == 'a
 
 elif menu == "Ver / Editar Alunos" and st.session_state['perfil'] == 'admin':
     st.title(f"👥 Gestão de Alunos: {projeto_atual}")
+    st.info("💡 Edite os alunos na tabela e clique no botão **Salvar Alterações** no final da página.")
     
     with st.expander("🗑️ Apagar Turma Inteira em Lote (Correção de Importação)"):
         st.warning("⚠️ **Atenção:** Esta ação apagará as matrículas de TODOS os alunos da turma selecionada neste projeto. Use apenas para corrigir planilhas importadas errado.")
@@ -604,22 +605,16 @@ elif menu == "Caderneta / Presença":
                         if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
                         else: aluno_ids_tuple = str(aluno_ids_tuple)
                         
-                        # Trazendo todas as faltas do banco para calcular o histórico total
                         df_freq_todas = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
                         
                         faltas_totais = []
                         presenca_hoje = []
                         
                         for _, row in df_alunos.iterrows():
-                            # Filtrar frequencias deste aluno
                             freqs_aluno = df_freq_todas[df_freq_todas['aluno_id'] == row['aluno_id']]
-                            
-                            # Contar faltas em todas as datas de `datas_db`
-                            # Uma falta é um registo onde presente == 0
                             total_f = freqs_aluno[(freqs_aluno['presente'] == 0) & (freqs_aluno['data_aula'].isin(datas_db))].shape[0]
                             faltas_totais.append(total_f)
                             
-                            # Pegar o status só da data selecionada
                             status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
                             if not status_hoje.empty:
                                 ip = status_hoje.iloc[0]['presente']
@@ -630,41 +625,37 @@ elif menu == "Caderneta / Presença":
                         df_alunos['Total de Faltas'] = faltas_totais
                         df_alunos['Frequência Nesta Data'] = presenca_hoje
                         
-                        col_cfg = {
-                            "aluno_id": None, "matricula_id": None, "Observações": None, "Qualitativo": None,
-                            "Aluno": st.column_config.TextColumn("Aluno", disabled=True),
-                            "Espetáculo": st.column_config.TextColumn("Espetác.", width=80),
-                            "Cena": st.column_config.TextColumn("Cena", width=120),
-                            "Total de Faltas": st.column_config.NumberColumn("Total de Faltas", disabled=True, width=100),
-                            "Frequência Nesta Data": st.column_config.SelectboxColumn("Frequência Nesta Data", options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=150)
-                        }
-                        
-                        cols_order = ['aluno_id', 'matricula_id', 'Aluno', 'Espetáculo', 'Cena', 'Total de Faltas', 'Frequência Nesta Data']
-                        df_display = df_alunos[cols_order].set_index('Aluno')
-                        df_display_copy = df_display.copy()
-                        
-                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Edite e clique em **Salvar Chamada**.")
+                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
                         with st.form("form_caderneta"):
-                            edited_df = st.data_editor(df_display, column_config=col_cfg, use_container_width=True)
+                            resultados_chamada = {}
+                            
+                            for _, row in df_alunos.iterrows():
+                                st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas: {row['Total de Faltas']} | Cena: {row['Cena']})</span>", unsafe_allow_html=True)
+                                
+                                # UTILIZANDO O RADIO BUTTON - MUITO MAIS RAPIDO NO CELULAR E SEM TECLADO!
+                                resultados_chamada[row['aluno_id']] = st.radio(
+                                    "Presença",
+                                    ["⚪ -", "🟢 P", "🔴 F"],
+                                    index=["⚪ -", "🟢 P", "🔴 F"].index(row['Frequência Nesta Data']),
+                                    horizontal=True,
+                                    key=f"pres_{row['aluno_id']}",
+                                    label_visibility="collapsed"
+                                )
+                                st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+                            
                             btn_salvar_chamada = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
                             
                             if btn_salvar_chamada:
-                                if edited_df.reset_index().to_json() != df_display_copy.reset_index().to_json():
-                                    lote_comandos = []
-                                    for _, row in edited_df.reset_index().iterrows():
-                                        a_id, m_id = int(row['aluno_id']), int(row['matricula_id'])
-                                        lote_comandos.append(("UPDATE matriculas SET espetaculo=%s, cena=%s WHERE id=%s", 
-                                                  (safe_str(row.get('Espetáculo','')), safe_str(row.get('Cena','')), m_id)))
-                                        
-                                        val = row['Frequência Nesta Data']
-                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
-                                    
-                                    executar_lote_sql(lote_comandos)
-                                    st.success("✅ Chamada salva com sucesso!")
-                                    import time
-                                    time.sleep(1)
-                                    st.rerun()
+                                lote_comandos = []
+                                for a_id, val in resultados_chamada.items():
+                                    p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                
+                                executar_lote_sql(lote_comandos)
+                                st.success("✅ Chamada salva com sucesso!")
+                                import time
+                                time.sleep(1)
+                                st.rerun()
 
                         st.markdown("---")
                         with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
@@ -712,24 +703,26 @@ elif menu == "Caderneta / Presença":
                 cols_r = ['ESCOLA', 'TURMA', 'ESPETÁCULO', 'CENA', 'ALUNO'] + datas_ui + ['FALTAS', 'QUALIT', 'NOTA FINAL', 'OBSERVAÇÕES']
                 df_resumo_limpo = df_resumo_limpo[cols_r]
                 
-                # NOVIDADE: Permite atualizar APENAS a nota Qualitativa pelo Resumo Geral de forma muito rápida
-                st.info("💡 Você pode editar a coluna **QUALIT** diretamente abaixo e salvar as alterações no banco de dados.")
-                with st.form("form_edicao_qualit"):
+                st.info("💡 Você pode editar as colunas **QUALIT**, **ESPETÁCULO** e **CENA** diretamente abaixo e salvar no botão no final da página.")
+                with st.form("form_edicao_resumo_geral"):
                     col_cfg_resumo = {c: st.column_config.Column(disabled=True) for c in df_resumo_limpo.columns}
                     col_cfg_resumo['QUALIT'] = st.column_config.NumberColumn("QUALIT", format="%.1f", disabled=False)
+                    col_cfg_resumo['ESPETÁCULO'] = st.column_config.TextColumn("ESPETÁCULO", disabled=False)
+                    col_cfg_resumo['CENA'] = st.column_config.TextColumn("CENA", disabled=False)
                     
                     edited_resumo = st.data_editor(df_resumo_limpo, column_config=col_cfg_resumo, use_container_width=True, hide_index=True)
-                    if st.form_submit_button("💾 Salvar Notas Qualitativas", type="primary"):
-                        if edited_resumo['QUALIT'].to_list() != df_resumo_limpo['QUALIT'].to_list():
+                    if st.form_submit_button("💾 Salvar Notas e Cenas em Lote", type="primary"):
+                        if edited_resumo.to_json() != df_resumo_limpo.to_json():
                             lote_comandos = []
                             for idx, row in edited_resumo.iterrows():
-                                if row['QUALIT'] != df_resumo_limpo.iloc[idx]['QUALIT']:
+                                orig = df_resumo_limpo.iloc[idx]
+                                if row['QUALIT'] != orig['QUALIT'] or row['ESPETÁCULO'] != orig['ESPETÁCULO'] or row['CENA'] != orig['CENA']:
                                     a_nome = row['ALUNO']
                                     a_turma = row['TURMA']
                                     a_escola = row['ESCOLA']
-                                    lote_comandos.append(("UPDATE matriculas SET nota_qualitativa=%s WHERE aluno_id = (SELECT id FROM alunos WHERE nome_aluno=%s LIMIT 1) AND turma=%s AND escola=%s AND projeto=%s", (float(row['QUALIT']), a_nome, a_turma, a_escola, projeto_atual)))
+                                    lote_comandos.append(("UPDATE matriculas SET nota_qualitativa=%s, espetaculo=%s, cena=%s WHERE aluno_id = (SELECT id FROM alunos WHERE nome_aluno=%s LIMIT 1) AND turma=%s AND escola=%s AND projeto=%s", (float(row['QUALIT']), safe_str(row['ESPETÁCULO']), safe_str(row['CENA']), a_nome, a_turma, a_escola, projeto_atual)))
                             executar_lote_sql(lote_comandos)
-                            st.success("✅ Notas Qualitativas atualizadas com sucesso!")
+                            st.success("✅ Atualizações salvas com sucesso!")
                             import time
                             time.sleep(1)
                             st.rerun()
@@ -790,45 +783,68 @@ elif menu == "Caderneta / Presença":
                             datas_ui.append(f"{dia:02d}/{m_num:02d} {sigla}")
                             datas_db.append(d_atual.strftime("%Y-%m-%d"))
 
-                df_alunos_turma = df_alunos_turma.set_index('Aluno')
-                
-                aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
-                if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
-                else: aluno_ids_tuple = str(aluno_ids_tuple)
-                df_freq = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
-                freq_dict = {(row['aluno_id'], row['data_aula']): row['presente'] for _, row in df_freq.iterrows()}
-                
-                col_cfg = {"aluno_id": None}
-                for i, col_ui in enumerate(datas_ui):
-                    col_db = datas_db[i]
-                    presencas = []
-                    for a_id in df_alunos_turma['aluno_id']:
-                        ip = freq_dict.get((a_id, col_db), -1)
-                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
-                    df_alunos_turma[col_ui] = presencas
-                    col_cfg[col_ui] = st.column_config.SelectboxColumn(col_ui, options=["⚪ -", "🟢 P", "🔴 F"], required=True, width=85)
-                
-                df_alunos_turma_copy = df_alunos_turma.copy()
-                
-                st.info("💡 Preencha a chamada para toda a turma e clique em **Salvar Chamada**.")
-                with st.form("form_caderneta_extra"):
-                    edited_df = st.data_editor(df_alunos_turma, column_config=col_cfg, use_container_width=True)
-                    btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada", type="primary")
+                if not datas_ui:
+                    st.warning("Não há aulas programadas para os dias desta turma neste mês específico.")
+                else:
+                    data_hoje_ui = st.selectbox("📅 Selecione a Data da Aula para fazer a chamada:", ["Selecione..."] + datas_ui)
                     
-                    if btn_salvar_chamada_extra:
-                        if edited_df.reset_index().to_json() != df_alunos_turma_copy.to_json():
-                            lote_comandos = []
-                            for _, row in edited_df.iterrows():
-                                a_id = int(row['aluno_id'])
-                                for i, cui in enumerate(datas_ui):
-                                    val = row[cui]
+                    if data_hoje_ui != "Selecione...":
+                        idx_data = datas_ui.index(data_hoje_ui)
+                        data_db_selecionada = datas_db[idx_data]
+
+                        aluno_ids_tuple = tuple(df_alunos_turma['aluno_id'].tolist())
+                        if len(aluno_ids_tuple) == 1: aluno_ids_tuple = f"({aluno_ids_tuple[0]})"
+                        else: aluno_ids_tuple = str(aluno_ids_tuple)
+                        
+                        df_freq_todas = ler_sql_cached(f"SELECT aluno_id, data_aula, presente FROM frequencia WHERE aluno_id IN {aluno_ids_tuple}")
+                        
+                        faltas_mes = []
+                        presenca_hoje = []
+                        
+                        for _, row in df_alunos_turma.iterrows():
+                            freqs_aluno = df_freq_todas[df_freq_todas['aluno_id'] == row['aluno_id']]
+                            total_f = freqs_aluno[(freqs_aluno['presente'] == 0) & (freqs_aluno['data_aula'].isin(datas_db))].shape[0]
+                            faltas_mes.append(total_f)
+                            
+                            status_hoje = freqs_aluno[freqs_aluno['data_aula'] == data_db_selecionada]
+                            if not status_hoje.empty:
+                                ip = status_hoje.iloc[0]['presente']
+                                presenca_hoje.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
+                            else:
+                                presenca_hoje.append("⚪ -")
+
+                        df_alunos_turma['Faltas neste Mês'] = faltas_mes
+                        df_alunos_turma['Frequência Nesta Data'] = presenca_hoje
+                        
+                        st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
+                        with st.form("form_caderneta_extra"):
+                            resultados_chamada = {}
+                            
+                            for _, row in df_alunos_turma.iterrows():
+                                st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas neste mês: {row['Faltas neste Mês']})</span>", unsafe_allow_html=True)
+                                
+                                resultados_chamada[row['aluno_id']] = st.radio(
+                                    "Presença",
+                                    ["⚪ -", "🟢 P", "🔴 F"],
+                                    index=["⚪ -", "🟢 P", "🔴 F"].index(row['Frequência Nesta Data']),
+                                    horizontal=True,
+                                    key=f"pres_{row['aluno_id']}",
+                                    label_visibility="collapsed"
+                                )
+                                st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+                            
+                            btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
+                            
+                            if btn_salvar_chamada_extra:
+                                lote_comandos = []
+                                for a_id, val in resultados_chamada.items():
                                     p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, datas_db[i], p_val)))
-                            executar_lote_sql(lote_comandos)
-                            st.success("✅ Chamada salva com sucesso!")
-                            import time
-                            time.sleep(1)
-                            st.rerun()
+                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                executar_lote_sql(lote_comandos)
+                                st.success("✅ Chamada salva com sucesso!")
+                                import time
+                                time.sleep(1)
+                                st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
