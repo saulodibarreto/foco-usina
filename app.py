@@ -11,6 +11,20 @@ from datetime import date
 # Configuração inicial
 st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
 
+# CSS para adicionar a palavra "MENU" ao lado do botão de expandir no celular
+st.markdown('''
+    <style>
+        [data-testid="collapsedControl"]::after {
+            content: " MENU";
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-left: 8px;
+            vertical-align: middle;
+            color: #31333F;
+        }
+    </style>
+''', unsafe_allow_html=True)
+
 # --- FUNÇÕES ---
 def safe_str(val):
     if pd.isna(val) or str(val).strip().upper() == 'NAN': return ""
@@ -95,7 +109,7 @@ if not st.session_state['logado']:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         if os.path.exists("FOCO USINA DE ARTES.png"): st.image("FOCO USINA DE ARTES.png", use_container_width=True)
-        st.markdown("<h2 style='text-align: center;'>🎭 Foco Usina - Acesso</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center;'>Foco Usina - Acesso</h2>", unsafe_allow_html=True)
         
         with st.form("form_login"):
             usuario_input = st.text_input("Usuário")
@@ -116,7 +130,7 @@ if not st.session_state['logado']:
     st.stop()
 
 if os.path.exists("FOCO USINA DE ARTES.png"): st.sidebar.image("FOCO USINA DE ARTES.png", use_container_width=True)
-else: st.sidebar.title("🎭 Foco Usina")
+else: st.sidebar.title("Foco Usina")
 
 st.sidebar.markdown(f"👤 **Logado como:** {st.session_state['usuario'].title()} ({st.session_state['perfil']})")
 if st.sidebar.button("Sair / Logout"):
@@ -630,9 +644,7 @@ elif menu == "Caderneta / Presença":
                             resultados_chamada = {}
                             
                             for _, row in df_alunos.iterrows():
-                                st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas: {row['Total de Faltas']} | Cena: {row['Cena']})</span>", unsafe_allow_html=True)
-                                
-                                # UTILIZANDO O RADIO BUTTON - MUITO MAIS RAPIDO NO CELULAR E SEM TECLADO!
+                                st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas: {row['Total de Faltas']} | Cena: {safe_str(row['Cena'])})</span>", unsafe_allow_html=True)
                                 resultados_chamada[row['aluno_id']] = st.radio(
                                     "Presença",
                                     ["⚪ -", "🟢 P", "🔴 F"],
@@ -641,21 +653,24 @@ elif menu == "Caderneta / Presença":
                                     key=f"pres_{row['aluno_id']}",
                                     label_visibility="collapsed"
                                 )
-                                st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+                                st.markdown("<hr style='margin: 0.5em 0; border-top: 1px solid #ddd;'>", unsafe_allow_html=True)
                             
                             btn_salvar_chamada = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
                             
                             if btn_salvar_chamada:
-                                lote_comandos = []
-                                for a_id, val in resultados_chamada.items():
-                                    p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
-                                
-                                executar_lote_sql(lote_comandos)
-                                st.success("✅ Chamada salva com sucesso!")
-                                import time
-                                time.sleep(1)
-                                st.rerun()
+                                pendentes = [df_alunos[df_alunos['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val == "⚪ -"]
+                                if pendentes:
+                                    st.error(f"⚠️ **A chamada NÃO foi salva!** Faltou marcar a presença de: {', '.join(pendentes)}")
+                                else:
+                                    lote_comandos = []
+                                    for a_id, val in resultados_chamada.items():
+                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                    executar_lote_sql(lote_comandos)
+                                    st.success("✅ Chamada salva com sucesso!")
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
 
                         st.markdown("---")
                         with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
@@ -685,12 +700,13 @@ elif menu == "Caderneta / Presença":
                     presencas = []
                     for _, row in df_resumo.iterrows():
                         ip = freq_dict.get((row['aluno_id'], col_banco), -1)
-                        presencas.append("P" if ip == 1 else ("F" if ip == 0 else "-"))
+                        # ISSO AQUI VAI PINTAR O F DE VERMELHO NATURALMENTE NA TABELA RESUMO!
+                        presencas.append("🟢 P" if ip == 1 else ("🔴 F" if ip == 0 else "⚪ -"))
                     df_resumo[col_tela] = presencas
                 
                 faltas_list, notas_list = [], []
                 for _, row in df_resumo.iterrows():
-                    f_count = sum(1 for c in datas_ui if row[c] == "F")
+                    f_count = sum(1 for c in datas_ui if row[c] == "🔴 F")
                     faltas_list.append(f_count)
                     q_val = row.get('QUALIT', 0.0)
                     if pd.isna(q_val): q_val = 0.0
@@ -822,7 +838,6 @@ elif menu == "Caderneta / Presença":
                             
                             for _, row in df_alunos_turma.iterrows():
                                 st.markdown(f"**{row['Aluno']}** <span style='color:gray; font-size:0.85em;'>(Faltas neste mês: {row['Faltas neste Mês']})</span>", unsafe_allow_html=True)
-                                
                                 resultados_chamada[row['aluno_id']] = st.radio(
                                     "Presença",
                                     ["⚪ -", "🟢 P", "🔴 F"],
@@ -831,20 +846,24 @@ elif menu == "Caderneta / Presença":
                                     key=f"pres_{row['aluno_id']}",
                                     label_visibility="collapsed"
                                 )
-                                st.markdown("<hr style='margin: 0.5em 0;'>", unsafe_allow_html=True)
+                                st.markdown("<hr style='margin: 0.5em 0; border-top: 1px solid #ddd;'>", unsafe_allow_html=True)
                             
                             btn_salvar_chamada_extra = st.form_submit_button("💾 Salvar Chamada do Dia", type="primary")
                             
                             if btn_salvar_chamada_extra:
-                                lote_comandos = []
-                                for a_id, val in resultados_chamada.items():
-                                    p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
-                                    lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
-                                executar_lote_sql(lote_comandos)
-                                st.success("✅ Chamada salva com sucesso!")
-                                import time
-                                time.sleep(1)
-                                st.rerun()
+                                pendentes = [df_alunos_turma[df_alunos_turma['aluno_id'] == a_id]['Aluno'].values[0] for a_id, val in resultados_chamada.items() if val == "⚪ -"]
+                                if pendentes:
+                                    st.error(f"⚠️ **A chamada NÃO foi salva!** Faltou marcar a presença dos seguintes alunos: {', '.join(pendentes)}")
+                                else:
+                                    lote_comandos = []
+                                    for a_id, val in resultados_chamada.items():
+                                        p_val = 1 if val == "🟢 P" else (0 if val == "🔴 F" else -1)
+                                        lote_comandos.append(("INSERT INTO frequencia (aluno_id, data_aula, presente) VALUES (%s, %s, %s) ON CONFLICT (aluno_id, data_aula) DO UPDATE SET presente = EXCLUDED.presente", (a_id, data_db_selecionada, p_val)))
+                                    executar_lote_sql(lote_comandos)
+                                    st.success("✅ Chamada salva com sucesso!")
+                                    import time
+                                    time.sleep(1)
+                                    st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
