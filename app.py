@@ -15,30 +15,27 @@ st.set_page_config(page_title="Foco Usina - Gestão", layout="wide")
 # CSS para o MENU no celular e design
 st.markdown('''
     <style>
-        /* Transformar o ícone de expandir num botão MENU claro e forçar a largura */
-        button[data-testid="collapsedControl"] {
+        /* Transformar o ícone de expandir num botão MENU claro */
+        header[data-testid="stHeader"] button {
             width: auto !important;
-            padding: 0.3rem 0.8rem !important;
-            border-radius: 5px !important;
-            border: 2px solid var(--primary-color) !important;
-            background-color: transparent !important;
-            display: flex !important;
-            align-items: center !important;
-            overflow: visible !important;
-            margin: 10px !important;
-            z-index: 9999 !important;
+            padding: 5px 12px !important;
+            border-radius: 6px !important;
+            border: 2px solid #ff4b4b !important;
+            background-color: #ffffff !important;
+            margin-top: 5px !important;
+            margin-left: 5px !important;
         }
-        button[data-testid="collapsedControl"] svg {
-            fill: var(--primary-color) !important;
-            color: var(--primary-color) !important;
-        }
-        button[data-testid="collapsedControl"]::after {
+        header[data-testid="stHeader"] button::after {
             content: "MENU";
-            font-family: sans-serif;
-            font-weight: 800 !important;
-            font-size: 0.95rem !important;
-            margin-left: 6px !important;
-            color: var(--primary-color) !important;
+            font-family: sans-serif !important;
+            font-weight: 900 !important;
+            font-size: 15px !important;
+            color: #ff4b4b !important;
+            margin-left: 5px !important;
+        }
+        header[data-testid="stHeader"] button svg {
+            fill: #ff4b4b !important;
+            color: #ff4b4b !important;
         }
         /* Melhorar o design das bolinhas de chamada (Radio) */
         div[role="radiogroup"] {
@@ -128,10 +125,6 @@ if 'logado' not in st.session_state:
     st.session_state['usuario'] = None
     st.session_state['perfil'] = None
     st.session_state['nome_prof'] = None
-
-# Gerenciador de avisos da chamada
-if 'aviso_chamada' not in st.session_state:
-    st.session_state['aviso_chamada'] = []
 
 for key in ['key_escola', 'key_turma', 'key_matricula', 'key_prof', 'key_user', 'key_novo_aluno']:
     if key not in st.session_state: st.session_state[key] = 0
@@ -691,13 +684,6 @@ elif menu == "Caderneta / Presença":
                         df_alunos['Total de Faltas'] = faltas_totais
                         df_alunos['Frequência Nesta Data'] = presenca_hoje
                         
-                        # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
-                        if st.session_state['aviso_chamada']:
-                            st.warning(f"⚠️ **Atenção:** A sua chamada foi salva, mas você esqueceu de preencher a presença de: {', '.join(st.session_state['aviso_chamada'])}")
-                            if st.button("✅ OK, Ciente (Ocultar Aviso)"):
-                                st.session_state['aviso_chamada'] = []
-                                st.rerun()
-                                
                         st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
                         with st.form("form_caderneta"):
                             resultados_chamada = {}
@@ -733,12 +719,12 @@ elif menu == "Caderneta / Presença":
                                     executar_lote_sql(lote_comandos)
                                 
                                 if pendentes:
-                                    st.session_state['aviso_chamada'] = pendentes
+                                    st.error(f"⚠️ **ATENÇÃO:** Os dados foram salvos, mas você **esqueceu** de preencher a presença de: {', '.join(pendentes)}")
                                 else:
-                                    st.session_state['aviso_chamada'] = []
                                     st.success("✅ Chamada completa e salva com sucesso!")
-                                
-                                st.rerun()
+                                    import time
+                                    time.sleep(1.5)
+                                    st.rerun()
 
                         st.markdown("---")
                         with st.expander("🔒 Cofre de Observações Privadas (Invisível aos Alunos)"):
@@ -900,13 +886,6 @@ elif menu == "Caderneta / Presença":
                         df_alunos_turma['Faltas neste Mês'] = faltas_mes
                         df_alunos_turma['Frequência Nesta Data'] = presenca_hoje
                         
-                        # EXIBIR AVISO DE CHAMADA INCOMPLETA (SE HOUVER)
-                        if st.session_state['aviso_chamada']:
-                            st.warning(f"⚠️ **Atenção:** A sua chamada foi salva, mas você esqueceu de preencher a presença de: {', '.join(st.session_state['aviso_chamada'])}")
-                            if st.button("✅ OK, Ciente (Ocultar Aviso)"):
-                                st.session_state['aviso_chamada'] = []
-                                st.rerun()
-
                         st.info(f"💡 Fazendo a chamada para o dia **{data_hoje_ui}**. Pressione as opções e clique em **Salvar Chamada do Dia** no fim da lista.")
                         with st.form("form_caderneta_extra"):
                             resultados_chamada = {}
@@ -942,12 +921,12 @@ elif menu == "Caderneta / Presença":
                                     executar_lote_sql(lote_comandos)
                                 
                                 if pendentes:
-                                    st.session_state['aviso_chamada'] = pendentes
+                                    st.error(f"⚠️ **ATENÇÃO:** Os dados foram salvos, mas você **esqueceu** de preencher a presença de: {', '.join(pendentes)}")
                                 else:
-                                    st.session_state['aviso_chamada'] = []
                                     st.success("✅ Chamada completa e salva com sucesso!")
-                                
-                                st.rerun()
+                                    import time
+                                    time.sleep(1.5)
+                                    st.rerun()
 
 elif menu == "Financeiro / Extrato":
     st.title("🏦 Financeiro")
